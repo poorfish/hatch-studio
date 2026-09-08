@@ -329,18 +329,21 @@ function fallbackSvg(settings, title, ink, paper) {
   return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720"><title>' + caption + ' — Hatch Studio</title><rect width="1000" height="720" fill="' + paper + '"/><g fill="none" stroke="' + ink + '" stroke-linecap="round" stroke-width="' + settings.weight + '"><path d="M105 493L105 272L294 149C369 75 470 83 548 143C612 190 667 180 755 253L895 375L895 493L583 645Z" fill="' + paper + '"/><g clip-path="url(#surface)" opacity="' + surfaceOpacity + '">' + lines.join("") + '</g><g clip-path="url(#shadow)" opacity="' + shadowOpacity + '">' + cross.join("") + '</g><g clip-path="url(#front)">' + baseFront.join("") + '</g><g clip-path="url(#side)">' + baseSide.join("") + '</g><path stroke-width="' + outlineWeight + '" d="M105 493L583 645L895 493M105 272L583 425L895 375M583 425L583 645"/><path stroke-width="' + outlineWeight + '" d="M294 149C328 213 352 244 405 263C452 282 500 246 548 143M548 143C584 205 638 223 704 247"/></g><text x="500" y="694" text-anchor="middle" font-family="Arial, sans-serif" font-size="38" letter-spacing="1" fill="' + ink + '">' + caption + '</text><defs><clipPath id="surface"><path d="M105 272L294 149C369 75 470 83 548 143C612 190 667 180 755 253L895 375L583 425Z"/></clipPath><clipPath id="shadow"><path d="M286 156C330 212 358 250 410 267C460 281 500 245 548 143C590 196 653 217 737 246L704 330L532 315L400 385Z"/></clipPath><clipPath id="front"><path d="M105 272L583 425L583 645L105 493Z"/></clipPath><clipPath id="side"><path d="M583 425L895 375L895 493L583 645Z"/></clipPath></defs></svg>';
 }
 function vectorizeMesh(root, camera, settings, title, ink, paper) {
-  const width = 1000, height = 720, rasterWidth = 420, rasterHeight = 302, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
+  // Keep the export in the same normalized camera view as the canvas, but use a
+  // denser screen-space raster than the preview's display pixels. This avoids
+  // stair-stepped silhouettes and missing hatch runs in the standalone SVG.
+  const width = 1000, height = 720, rasterWidth = 720, rasterHeight = 518, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
   root.updateMatrixWorld(true); camera.updateMatrixWorld(true);
   root.traverse((mesh) => {
     if (!mesh.isMesh || mesh.userData.silhouette || !mesh.geometry?.attributes?.position) return;
-    const geo = mesh.geometry, attr = geo.attributes.position, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 1100));
+    const geo = mesh.geometry, attr = geo.attributes.position, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 7000));
     for (let f = 0; f < count; f += stride) {
       const ids = [0, 1, 2].map((n) => index ? index.getX(f * 3 + n) : f * 3 + n);
       const a = new THREE.Vector3().fromBufferAttribute(attr, ids[0]).applyMatrix4(mesh.matrixWorld), b = new THREE.Vector3().fromBufferAttribute(attr, ids[1]).applyMatrix4(mesh.matrixWorld), c = new THREE.Vector3().fromBufferAttribute(attr, ids[2]).applyMatrix4(mesh.matrixWorld);
       const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize(), center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
       if (normal.dot(camera.position.clone().sub(center).normalize()) < .015) continue;
       const p = [a, b, c].map((point) => project(point, camera, width, height));
-      if (!p.every((point) => point.x > -40 && point.x < width + 40 && point.y > -40 && point.y < height + 40)) continue;
+      if (p.every((point) => point.x < -40 || point.x > width + 40 || point.y < -40 || point.y > height + 40)) continue;
       faces.push({ p, depth: (p[0].z + p[1].z + p[2].z) / 3, shade: 1 - Math.max(0, normal.dot(light) * .78 + .22) });
     }
   });
@@ -366,7 +369,7 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       if (z < depth[index]) { depth[index] = z; shade[index] = face.shade; visible[index] = 1; }
     }
   }
-  const paths = [], gap = Math.max(4, settings.spacing), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .055 + contrast * .34, secondaryThreshold = .44 + contrast * .25, appendScanline = (y, threshold, angle = settings.angle, seed = 0) => {
+  const paths = [], gap = Math.max(4, settings.spacing), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (y, threshold, angle = settings.angle, seed = 0) => {
     const scaleX = width / rasterWidth, scaleY = height / rasterHeight, slope = Math.tan(angle * Math.PI / 180), tangent = { x: Math.cos(angle * Math.PI / 180), y: Math.sin(angle * Math.PI / 180) }, wavePoint = (x) => ({ x: x * scaleX, y: y + x * scaleX * slope + (settings.lineStyle === "wave" ? settings.wave * Math.sin((x * scaleX * tangent.x + y * tangent.y + seed) * .045) : 0) }), renderRun = (from, to, tone = .5) => { const darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(1 - threshold, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 10)); for (let i = 0; i <= samples; i += 1) points.push(wavePoint(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); }; let start = null, tone = .5;
     for (let x = 0; x <= rasterWidth; x += 1) {
       const px = Math.min(rasterWidth - 1, x), py = Math.max(0, Math.min(rasterHeight - 1, Math.round((y + x * scaleX * slope) / scaleY))), index = edgeAt(px, py), on = visible[index] && shade[index] > threshold;
@@ -379,7 +382,10 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
   for (let y = -height; y < height * 1.5; y += gap * 1.6) appendScanline(y, secondaryThreshold, settings.angle + 90, y + 17);
   const boundary = [];
   for (let y = 0; y < rasterHeight; y += 2) { let left = -1, right = -1; for (let x = 0; x < rasterWidth; x += 1) if (visible[edgeAt(x, y)]) { if (left < 0) left = x; right = x; } if (left >= 0) boundary.push([left * width / rasterWidth, y * height / rasterHeight, right * width / rasterWidth]); }
-  const outline = boundary.length ? '<path stroke-width="' + settings.outline.toFixed(2) + '" d="M' + boundary.map((point) => point[0].toFixed(1) + ' ' + point[1].toFixed(1)).join(' L') + ' L' + boundary.map((point) => point[2].toFixed(1) + ' ' + point[1].toFixed(1)).reverse().join(' L') + ' Z"/>' : '';
+  const contour = boundary.map((point) => ({ x: point[0], y: point[1] })).concat(boundary.slice().reverse().map((point) => ({ x: point[2], y: point[1] })));
+  const smoothedContour = contour.map((point, index) => { const from = Math.max(0, index - 2), to = Math.min(contour.length - 1, index + 2); let x = 0, y = 0; for (let i = from; i <= to; i += 1) { x += contour[i].x; y += contour[i].y; } const count = to - from + 1; return { x: x / count, y: y / count }; });
+  const smoothPath = (points) => { if (points.length < 2) return ""; let d = "M" + points[0].x.toFixed(1) + " " + points[0].y.toFixed(1); for (let i = 1; i < points.length - 1; i += 1) { const next = { x: (points[i].x + points[i + 1].x) / 2, y: (points[i].y + points[i + 1].y) / 2 }; d += " Q" + points[i].x.toFixed(1) + " " + points[i].y.toFixed(1) + " " + next.x.toFixed(1) + " " + next.y.toFixed(1); } const last = points[points.length - 1]; return d + " Q" + last.x.toFixed(1) + " " + last.y.toFixed(1) + " " + last.x.toFixed(1) + " " + last.y.toFixed(1) + " Z"; };
+  const outline = smoothedContour.length ? '<path stroke-width="' + settings.outline.toFixed(2) + '" d="' + smoothPath(smoothedContour) + '"/>' : '';
   return '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 720"><title>' + title + ' — Hatch Studio</title><rect width="1000" height="720" fill="' + paper + '"/><g fill="none" stroke="' + ink + '" stroke-width="' + settings.weight + '" stroke-linecap="round" stroke-linejoin="round">' + paths.join("") + outline + '</g></svg>';
 }
 function outputSvg(root, camera, settings, title, ink, paper) {
