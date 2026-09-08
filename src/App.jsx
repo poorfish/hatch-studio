@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -11,7 +11,7 @@ import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Check, ChevronDown, Download, FileUp, Info, Maximize2, Minimize2, MousePointer2, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Download, FileUp, ImageDown, Info, Maximize2, Minimize2, MousePointer2, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
 import bustAsset from "./assets/bust.glb";
 import torusAsset from "./assets/torus.glb";
 import vaseAsset from "./assets/vase.glb";
@@ -422,8 +422,9 @@ function applyViewportAppearance(runtime, paper, ink, settings) {
     uniforms.uLight.value.set(Math.cos(radians), .8, Math.sin(radians)).normalize();
   });
 }
-function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState }) {
-  const host = useRef(null), live = useRef(null);
+function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState, onVectorChange }) {
+  const host = useRef(null), live = useRef(null), vectorCallback = useRef(onVectorChange), vectorFrame = useRef(null), requestVectorRef = useRef(null);
+  useEffect(() => { vectorCallback.current = onVectorChange; }, [onVectorChange]);
   useEffect(() => {
     const element = host.current, scene = new THREE.Scene(), orthographic = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 100), perspective = new THREE.PerspectiveCamera(36, 1, .1, 100), camera = orthographic;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -433,12 +434,18 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
     outlinePass.edgeStrength = 2.2; outlinePass.edgeGlow = 0; outlinePass.edgeThickness = 1.15; outlinePass.pulsePeriod = 0; outlinePass.visibleEdgeColor.set(ink); outlinePass.hiddenEdgeColor.set(ink);
     composer.addPass(renderPass); composer.addPass(outlinePass); outlinePass.renderToScreen = true;
     const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, .75, 0); controls.minDistance = 4.5; controls.maxDistance = 18;
+    const requestVector = () => {
+      if (vectorFrame.current) return;
+      vectorFrame.current = requestAnimationFrame(() => { vectorFrame.current = null; if (live.current) vectorCallback.current?.(live.current); });
+    };
+    requestVectorRef.current = requestVector;
+    controls.addEventListener("change", requestVector);
     scene.add(new THREE.HemisphereLight(0xfffdf6, 0x766d5c, 2.6)); const light = new THREE.DirectionalLight(0xffffff, 3.2); light.position.set(4, 7, 4); scene.add(light);
     const model = presetModel(preset); scene.add(model); outlinePass.selectedObjects = meshTargets(model); live.current = { scene, camera, orthographic, perspective, renderer, composer, renderPass, outlinePass, controls, model, cameraMode: "orthographic" }; onRuntime(live.current);
-    const resize = () => { const rect = element.getBoundingClientRect(), aspect = rect.width / Math.max(rect.height, 1), viewHeight = 7.4; orthographic.top = viewHeight / 2; orthographic.bottom = -viewHeight / 2; orthographic.left = -viewHeight * aspect / 2; orthographic.right = viewHeight * aspect / 2; orthographic.updateProjectionMatrix(); perspective.aspect = aspect; perspective.updateProjectionMatrix(); renderer.setSize(rect.width, rect.height, false); composer.setSize(rect.width, rect.height); outlinePass.resolution.set(rect.width, rect.height); scene.traverse((item) => { if (item.material?.resolution) item.material.resolution.set(rect.width, rect.height); }); frameView(live.current, rect.width, rect.height); };
-    const observer = new ResizeObserver(resize); observer.observe(element); resize();
+    const resize = () => { const rect = element.getBoundingClientRect(), aspect = rect.width / Math.max(rect.height, 1), viewHeight = 7.4; orthographic.top = viewHeight / 2; orthographic.bottom = -viewHeight / 2; orthographic.left = -viewHeight * aspect / 2; orthographic.right = viewHeight * aspect / 2; orthographic.updateProjectionMatrix(); perspective.aspect = aspect; perspective.updateProjectionMatrix(); renderer.setSize(rect.width, rect.height, false); composer.setSize(rect.width, rect.height); outlinePass.resolution.set(rect.width, rect.height); scene.traverse((item) => { if (item.material?.resolution) item.material.resolution.set(rect.width, rect.height); }); frameView(live.current, rect.width, rect.height); requestVector(); };
+    const observer = new ResizeObserver(resize); observer.observe(element); resize(); requestVector();
     let frame; const draw = () => { controls.update(); composer.render(); frame = requestAnimationFrame(draw); }; draw();
-    return () => { cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); element.replaceChildren(); };
+    return () => { cancelAnimationFrame(frame); if (vectorFrame.current) cancelAnimationFrame(vectorFrame.current); requestVectorRef.current = null; controls.removeEventListener("change", requestVector); observer.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); element.replaceChildren(); };
   }, []);
   useEffect(() => {
     const current = live.current; if (!current) return;
@@ -448,11 +455,12 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
     const current = live.current; if (!current || current.cameraMode === cameraMode) return;
     const next = cameraMode === "perspective" ? current.perspective : current.orthographic;
     next.position.copy(current.camera.position); next.quaternion.copy(current.camera.quaternion); next.updateProjectionMatrix();
-    current.controls.object = next; current.camera = next; current.cameraMode = cameraMode; current.renderPass.camera = next; current.outlinePass.renderCamera = next; current.controls.update(); frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight); onRuntime(current);
+    current.controls.object = next; current.camera = next; current.cameraMode = cameraMode; current.renderPass.camera = next; current.outlinePass.renderCamera = next; current.controls.update(); frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight); onRuntime(current); requestVectorRef.current?.();
   }, [cameraMode, onRuntime]);
   useEffect(() => {
     if (!live.current) return;
     applyViewportAppearance(live.current, paper, ink, settings);
+    requestVectorRef.current?.();
   }, [paper, ink, settings]);
   useEffect(() => {
     if (!live.current) return;
@@ -466,7 +474,7 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
         current.outlinePass.selectedObjects = meshTargets(next);
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
-        onRuntime(current);
+        onRuntime(current); requestVectorRef.current?.();
       };
       if (BUNDLED_ASSETS[preset]) {
         onLoadState({ status: "loading", message: "" });
@@ -505,7 +513,7 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
         current.controls.update();
-        onRuntime(current);
+        onRuntime(current); requestVectorRef.current?.();
         onLoadState({ status: "ready", message: "" });
       } catch (error) { fail(error); }
     };
@@ -539,8 +547,13 @@ function PanelSection({ name, label, open, onToggle, className = "", children })
   </section>;
 }
 export function App() {
-  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
+  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [vectorSvg, setVectorSvg] = useState(""), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
   const runtime = useRef(null), input = useRef(null), panelDrag = useRef(null);
+  const modelTitle = model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau";
+  const updateVectorPreview = useCallback((current) => {
+    if (!current?.model || !current?.camera) return;
+    setVectorSvg(outputSvg(current.model, current.camera, settings, modelTitle, ink, paper));
+  }, [settings, modelTitle, ink, paper]);
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 2200); };
   const update = (key, value) => setSettings({ ...settings, [key]: value });
   const toggleSection = (name) => setOpenSections((current) => ({ ...current, [name]: !current[name] }));
@@ -581,16 +594,30 @@ export function App() {
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
   const download = () => {
-    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau", ink, paper);
+    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
     const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
+  };
+  const downloadPng = async () => {
+    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper).replace(/<rect\b[^>]*\/?>/i, "");
+    const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    try {
+      const image = new Image();
+      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = svgUrl; });
+      const canvas = document.createElement("canvas"); canvas.width = 1000; canvas.height = 720;
+      const context = canvas.getContext("2d"); context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("PNG encoding failed");
+      const link = document.createElement("a"), url = URL.createObjectURL(blob); link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"; link.click(); URL.revokeObjectURL(url); notify("Transparent PNG saved");
+    } catch (error) { notify("PNG export failed"); }
+    URL.revokeObjectURL(svgUrl);
   };
   const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
   return <main className={"app-shell" + (showPanel ? "" : " panel-hidden") + (isFullscreen ? " is-fullscreen" : "")} id="top">
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
       <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a real SVG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onVectorChange={updateVectorPreview} onLoadState={setLoadState}/>{vectorSvg && <div className="vector-stage" aria-hidden="true" dangerouslySetInnerHTML={{ __html: vectorSvg }}/>}<div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><span>HatchKit</span><Sparkles size={15}/></div><div className="panel-divider"/>
@@ -598,7 +625,7 @@ export function App() {
       <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><div className="camera-note"><Maximize2 size={14}/> {cameraMode === "perspective" ? "perspective view" : "axonometric view"} · orbit directly in the 3D view</div><button className={"toggle-row " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls"><div className="style-row"><span>Line type</span><div className="segmented hatch-style"><button className={settings.lineStyle === "straight" ? "selected" : ""} onClick={() => update("lineStyle", "straight")}>Straight</button><button className={settings.lineStyle === "wave" ? "selected" : ""} onClick={() => update("lineStyle", "wave")}>Wavy</button></div></div>{settings.lineStyle === "wave" && <Range label="Wave curvature" value={settings.wave} min={8} max={24} step={.5} suffix=" px" onChange={(v) => update("wave", v)}/>}<Range label="Line spacing" value={settings.spacing} min={4} max={18} suffix=" px" onChange={(v) => update("spacing", v)}/><Range label="Stroke weight" value={settings.weight} min={.5} max={4} step={.05} suffix=" px" onChange={(v) => update("weight", v)}/><Range label="Stroke taper" value={settings.taper ?? 2.2} min={.5} max={5} step={.1} suffix=" ×" onChange={(v) => update("taper", v)}/><Range label="Raggedness" value={settings.raggedness ?? 0} min={0} max={100} suffix="%" onChange={(v) => update("raggedness", v)}/><Range label="Outline thickness" value={settings.outline} min={0} max={4} step={.1} suffix=" px" onChange={(v) => update("outline", v)}/><Range label="Contrast" value={settings.contrast} min={20} max={100} suffix="%" onChange={(v) => update("contrast", v)}/><Range label="Hatch angle" value={settings.angle} min={-45} max={45} suffix="°" onChange={(v) => update("angle", v)}/><Range label="Light direction" value={settings.light} min={-180} max={180} suffix="°" onChange={(v) => update("light", v)}/><button className={"toggle-row dotted-toggle " + (settings.dottedEnds ? "on" : "")} aria-pressed={settings.dottedEnds} onClick={() => update("dottedEnds", !settings.dottedEnds)}><span>Dotted line ends</span><span className="toggle-track"><span className="toggle-thumb"/></span></button>{settings.dottedEnds && <Range label="Dotted fade" value={settings.dottedFade ?? 58} min={0} max={100} suffix="%" onChange={(v) => update("dottedFade", v)}/>}</PanelSection>
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
-      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
+      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="png-button" onClick={downloadPng}><ImageDown size={15}/> PNG</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
     </aside>
     <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · vector export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
   </main>;

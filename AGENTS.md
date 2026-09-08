@@ -12,3 +12,4 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 - The main stage is the live hatch SVG preview. Do not reintroduce a separate thumbnail preview card.
 - Local model loading must retain the previous render on failure and expose a clear, actionable loading error in the Model section.
+- Vector preview/export experiments should share the same generated SVG path scene so the on-page preview and downloaded SVG stay visually synchronized. The pre-experiment shader renderer is preserved at the `pre-unified-vector-scene` git tag.
