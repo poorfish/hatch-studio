@@ -594,13 +594,21 @@ export function App() {
     setPreset(null); setModel({ file, name: file.name, size: file.size }); notify("Reading model locally");
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
+  const triggerDownload = (blob, filename) => {
+    const link = document.createElement("a"), url = URL.createObjectURL(blob);
+    link.href = url; link.download = filename; link.style.display = "none";
+    document.body.appendChild(link); link.click(); link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  };
   const download = () => {
-    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
-    const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
+    try {
+      const svg = vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
+      triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg");
+      notify("SVG saved");
+    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed"); }
   };
   const downloadPng = async () => {
-    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper).replace(/<rect\b[^>]*\/?>/i, "");
+    const svg = (vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper)).replace(/<rect\b[^>]*\/?>/i, "");
     const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     try {
       const image = new Image();
@@ -609,7 +617,7 @@ export function App() {
       const context = canvas.getContext("2d"); context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("PNG encoding failed");
-      const link = document.createElement("a"), url = URL.createObjectURL(blob); link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"; link.click(); URL.revokeObjectURL(url); notify("Transparent PNG saved");
+      triggerDownload(blob, (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"); notify("Transparent PNG saved");
     } catch (error) { notify("PNG export failed"); }
     URL.revokeObjectURL(svgUrl);
   };
