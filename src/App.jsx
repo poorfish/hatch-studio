@@ -11,13 +11,13 @@ import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Box, Check, ChevronDown, Download, FileUp, Info, Maximize2, Minimize2, MousePointer2, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Download, FileUp, Info, Maximize2, Minimize2, MousePointer2, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
 import bustAsset from "./assets/bust.glb";
 import torusAsset from "./assets/torus.glb";
 import vaseAsset from "./assets/vase.glb";
 
 const PAPER = "#f7f4ec";
-const INITIAL = { spacing: 8, weight: 1.15, taper: 2.2, outline: .5, raggedness: 0, contrast: 68, angle: -12, light: 35, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 58 };
+const INITIAL = { spacing: 8, weight: 1.8, taper: 1.8, outline: .5, raggedness: 0, contrast: 80, angle: -12, light: 35, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 58 };
 const PRESETS = [
   { id: "bust", label: "Greek bust", caption: "Greek bust" },
   { id: "knot", label: "KNOT", caption: "Torus knot" },
@@ -573,7 +573,7 @@ export function App() {
     const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
   };
-  const copy = async () => { await navigator.clipboard?.writeText(JSON.stringify(settings, null, 2)); notify("Settings copied"); };
+  const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
   return <main className={"app-shell" + (showPanel ? "" : " panel-hidden") + (isFullscreen ? " is-fullscreen" : "")} id="top">
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
@@ -586,7 +586,7 @@ export function App() {
       <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><div className="camera-note"><Maximize2 size={14}/> {cameraMode === "perspective" ? "perspective view" : "axonometric view"} · orbit directly in the 3D view</div><button className={"toggle-row " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls"><div className="style-row"><span>Line type</span><div className="segmented hatch-style"><button className={settings.lineStyle === "straight" ? "selected" : ""} onClick={() => update("lineStyle", "straight")}>Straight</button><button className={settings.lineStyle === "wave" ? "selected" : ""} onClick={() => update("lineStyle", "wave")}>Wavy</button></div></div>{settings.lineStyle === "wave" && <Range label="Wave curvature" value={settings.wave} min={8} max={24} step={.5} suffix=" px" onChange={(v) => update("wave", v)}/>}<Range label="Line spacing" value={settings.spacing} min={4} max={18} suffix=" px" onChange={(v) => update("spacing", v)}/><Range label="Stroke weight" value={settings.weight} min={.5} max={4} step={.05} suffix=" px" onChange={(v) => update("weight", v)}/><Range label="Stroke taper" value={settings.taper ?? 2.2} min={.5} max={5} step={.1} suffix=" ×" onChange={(v) => update("taper", v)}/><Range label="Raggedness" value={settings.raggedness ?? 0} min={0} max={100} suffix="%" onChange={(v) => update("raggedness", v)}/><Range label="Outline thickness" value={settings.outline} min={0} max={4} step={.1} suffix=" px" onChange={(v) => update("outline", v)}/><Range label="Contrast" value={settings.contrast} min={20} max={100} suffix="%" onChange={(v) => update("contrast", v)}/><Range label="Hatch angle" value={settings.angle} min={-45} max={45} suffix="°" onChange={(v) => update("angle", v)}/><Range label="Light direction" value={settings.light} min={-180} max={180} suffix="°" onChange={(v) => update("light", v)}/><button className={"toggle-row dotted-toggle " + (settings.dottedEnds ? "on" : "")} aria-pressed={settings.dottedEnds} onClick={() => update("dottedEnds", !settings.dottedEnds)}><span>Dotted line ends</span><span className="toggle-track"><span className="toggle-thumb"/></span></button>{settings.dottedEnds && <Range label="Dotted fade" value={settings.dottedFade ?? 58} min={0} max={100} suffix="%" onChange={(v) => update("dottedFade", v)}/>}</PanelSection>
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
-      <div className="panel-footer"><button className="copy-button" onClick={copy}><Box size={15}/> Copy</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
+      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
     </aside>
     <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · vector export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
   </main>;
