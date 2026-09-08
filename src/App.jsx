@@ -344,7 +344,8 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       if (normal.dot(camera.position.clone().sub(center).normalize()) < .015) continue;
       const p = [a, b, c].map((point) => project(point, camera, width, height));
       if (p.every((point) => point.x < -40 || point.x > width + 40 || point.y < -40 || point.y > height + 40)) continue;
-      faces.push({ p, depth: (p[0].z + p[1].z + p[2].z) / 3, shade: 1 - Math.max(0, normal.dot(light) * .78 + .22) });
+      const rawShade = 1 - Math.max(0, Math.min(1, normal.dot(light) * .78 + .22)), shadeExponent = 1.8 + (.62 - 1.8) * contrast;
+      faces.push({ p, depth: (p[0].z + p[1].z + p[2].z) / 3, shade: Math.pow(rawShade, shadeExponent) });
     }
   });
   if (!faces.length) return fallbackSvg(settings, title, ink, paper);
@@ -375,7 +376,7 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((distance * Math.min(scaleX, scaleY) + seed) * .045) : 0;
       return steep ? { x: rawX * scaleX + wave, y: rawY * scaleY } : { x: rawX * scaleX, y: rawY * scaleY + wave };
     };
-    const renderRun = (from, to, tone = .5) => { const darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(1 - threshold, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 8)); for (let i = 0; i <= samples; i += 1) points.push(pointAt(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); };
+    const solidThreshold = .68 + contrast * (.50 - .68), renderRun = (from, to, tone = .5) => { const darknessRange = threshold < solidThreshold ? solidThreshold - threshold : 1 - threshold, darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(darknessRange, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 8)); for (let i = 0; i <= samples; i += 1) points.push(pointAt(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); };
     let start = null, tone = .5;
     for (let distance = 0; distance <= span; distance += 1) {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY), inside = px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight, index = inside ? edgeAt(px, py) : 0, on = inside && visible[index] && shade[index] > threshold;
