@@ -59,3 +59,4 @@
 .is-fullscreen .control-panel.panel-dragging .panel-brand{cursor:grabbing}
 .is-fullscreen .control-panel.panel-dragging{user-select:none}
 .is-fullscreen .toast{display:none}
+.interaction-hint{opacity:0;visibility:hidden;transition:opacity .24s ease,visibility .24s ease}.interaction-hint.visible{opacity:1;visibility:visible}
