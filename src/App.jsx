@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -11,7 +11,7 @@ import { OutlinePass } from "three/examples/jsm/postprocessing/OutlinePass.js";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Check, ChevronDown, Download, FileUp, ImageDown, Info, Maximize2, Minimize2, MousePointer2, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Download, FileUp, Info, Maximize2, Minimize2, MousePointer2, RotateCcw, SlidersHorizontal, Sparkles } from "lucide-react";
 import bustAsset from "./assets/bust.glb";
 import torusAsset from "./assets/torus.glb";
 import vaseAsset from "./assets/vase.glb";
@@ -307,41 +307,6 @@ function dottedRun(points, strokeWidth, settings, ink, allowDotted = true) {
   drawTerminal(0, 1); drawTerminal(points.length - 1, -1);
   return raggedPath(solid) + segments.join("");
 }
-function variableStrokePath(points, widths, ink, opacity = 1) {
-  if (points.length < 2) return "";
-  const left = [], right = [];
-  for (let i = 0; i < points.length; i += 1) {
-    const previous = points[Math.max(0, i - 1)], next = points[Math.min(points.length - 1, i + 1)];
-    const dx = next.x - previous.x, dy = next.y - previous.y, length = Math.hypot(dx, dy) || 1;
-    const nx = -dy / length, ny = dx / length, half = Math.max(.01, widths[i] || 0) * .5;
-    left.push({ x: points[i].x + nx * half, y: points[i].y + ny * half });
-    right.push({ x: points[i].x - nx * half, y: points[i].y - ny * half });
-  }
-  const all = left.concat(right.reverse()), d = all.map((point, index) => (index ? "L" : "M") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join("") + "Z";
-  return '<path fill="' + ink + '" stroke="none"' + (opacity < .999 ? ' fill-opacity="' + opacity.toFixed(3) + '"' : '') + ' d="' + d + '"/>';
-}
-function variableDottedRun(points, widths, settings, ink, allowDotted = true) {
-  if (points.length < 2) return "";
-  if (!allowDotted || !settings.dottedEnds || points.length < 5) return variableStrokePath(points, widths, ink);
-  const strength = Math.min(1, Math.max(0, settings.dottedFade ?? 58) / 100), random = (index, point) => {
-    const value = Math.sin((index + 1) * 12.9898 + point.x * .137 + point.y * .173) * 43758.5453;
-    return value - Math.floor(value);
-  };
-  const end = Math.max(1, Math.floor(points.length * (.06 + strength * .28))), leftWidth = widths.slice(0, end).reduce((sum, value) => sum + value, 0) / end, rightWidth = widths.slice(-end).reduce((sum, value) => sum + value, 0) / end;
-  const brightAtEnd = leftWidth < rightWidth ? 0 : 1, segments = [];
-  const solidStart = brightAtEnd ? 0 : end, solidEnd = brightAtEnd ? points.length - end : points.length;
-  if (solidEnd - solidStart > 1) segments.push(variableStrokePath(points.slice(solidStart, solidEnd), widths.slice(solidStart, solidEnd), ink));
-  const drawTerminal = (start, direction) => {
-    for (let i = 0; i < end; i += 1) {
-      const index = start + i * direction, nextIndex = start + (i + 1) * direction;
-      if (!points[nextIndex]) continue;
-      const from = points[index], to = points[nextIndex], dashLength = .22 + random(i, from) * .5, shortTo = { x: from.x + (to.x - from.x) * dashLength, y: from.y + (to.y - from.y) * dashLength }, progress = (i + 1) / end, opacity = .04 + (1 - strength) * .25 + Math.pow(progress, 2.7) * (.7 + strength * .25);
-      segments.push(variableStrokePath([from, shortTo], [widths[index] || 0, (widths[index] || 0) * .72], ink, opacity));
-    }
-  };
-  drawTerminal(brightAtEnd ? points.length - 1 : 0, brightAtEnd ? -1 : 1);
-  return segments.join("");
-}
 function fallbackSvg(settings, title, ink, paper) {
   const gap = Math.max(5, settings.spacing), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), angle = settings.angle * Math.PI / 180, slope = Math.tan(angle), lines = [];
   const makePoints = (x1, y1, x2, y2, seed = 0) => { const length = Math.hypot(x2 - x1, y2 - y1), nx = -(y2 - y1) / Math.max(length, 1), ny = (x2 - x1) / Math.max(length, 1), count = Math.max(2, Math.ceil(length / 14)), points = []; for (let i = 0; i <= count; i += 1) { const t = i / count, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((t * length + seed * 17) * .045) : 0; points.push({ x: x1 + (x2 - x1) * t + nx * wave, y: y1 + (y2 - y1) * t + ny * wave }); } return points; };
@@ -367,19 +332,19 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
   // Keep the export in the same normalized camera view as the canvas, but use a
   // denser screen-space raster than the preview's display pixels. This avoids
   // stair-stepped silhouettes and missing hatch runs in the standalone SVG.
-  const width = 1000, height = 720, rasterWidth = 720, rasterHeight = 518, contrast = settings.contrast / 100, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
+  const width = 1000, height = 720, rasterWidth = 720, rasterHeight = 518, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
   root.updateMatrixWorld(true); camera.updateMatrixWorld(true);
   root.traverse((mesh) => {
     if (!mesh.isMesh || mesh.userData.silhouette || !mesh.geometry?.attributes?.position) return;
-    const geo = mesh.geometry, attr = geo.attributes.position, normalAttr = geo.attributes.normal, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 40000)), normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const geo = mesh.geometry, attr = geo.attributes.position, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 7000));
     for (let f = 0; f < count; f += stride) {
       const ids = [0, 1, 2].map((n) => index ? index.getX(f * 3 + n) : f * 3 + n);
       const a = new THREE.Vector3().fromBufferAttribute(attr, ids[0]).applyMatrix4(mesh.matrixWorld), b = new THREE.Vector3().fromBufferAttribute(attr, ids[1]).applyMatrix4(mesh.matrixWorld), c = new THREE.Vector3().fromBufferAttribute(attr, ids[2]).applyMatrix4(mesh.matrixWorld);
-      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
+      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize(), center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
+      if (normal.dot(camera.position.clone().sub(center).normalize()) < .015) continue;
       const p = [a, b, c].map((point) => project(point, camera, width, height));
       if (p.every((point) => point.x < -40 || point.x > width + 40 || point.y < -40 || point.y > height + 40)) continue;
-      const normals = (normalAttr ? ids : [0, 0, 0]).map((id) => normalAttr ? new THREE.Vector3().fromBufferAttribute(normalAttr, id).applyMatrix3(normalMatrix).normalize() : normal.clone().applyMatrix3(normalMatrix).normalize());
-      faces.push({ p, normals, depth: (p[0].z + p[1].z + p[2].z) / 3 });
+      faces.push({ p, depth: (p[0].z + p[1].z + p[2].z) / 3, shade: 1 - Math.max(0, normal.dot(light) * .78 + .22) });
     }
   });
   if (!faces.length) return fallbackSvg(settings, title, ink, paper);
@@ -401,42 +366,16 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
     for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
       const weights = barycentric(x + .5, y + .5, p[0], p[1], p[2]); if (!weights) continue;
       const z = p[0].z * weights[0] + p[1].z * weights[1] + p[2].z * weights[2], index = edgeAt(x, y);
-      if (z < depth[index]) {
-        const normal = face.normals[0].clone().multiplyScalar(weights[0]).add(face.normals[1].clone().multiplyScalar(weights[1])).add(face.normals[2].clone().multiplyScalar(weights[2])).normalize();
-        const rawShade = 1 - Math.max(0, Math.min(1, normal.dot(light) * .78 + .22));
-        depth[index] = z; shade[index] = Math.pow(rawShade, 1.8 + (.62 - 1.8) * contrast); visible[index] = 1;
-      }
+      if (z < depth[index]) { depth[index] = z; shade[index] = face.shade; visible[index] = 1; }
     }
   }
-  const shadeSource = shade.slice(), visibleSource = visible.slice();
-  for (let y = 1; y < rasterHeight - 1; y += 1) for (let x = 1; x < rasterWidth - 1; x += 1) {
-    let total = 0, samples = 0;
-    for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
-      const neighbor = edgeAt(x + ox, y + oy);
-      if (visibleSource[neighbor]) { total += shadeSource[neighbor]; samples += 1; }
-    }
-    const current = edgeAt(x, y);
-    if (samples >= 3) shade[current] = total / samples;
-    if (!visibleSource[current] && samples >= 7) visible[current] = 1;
-  }
-  const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
+  const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
     const radians = angle * Math.PI / 180, slope = Math.tan(radians), steep = Math.abs(Math.cos(radians)) < Math.abs(Math.sin(radians)), inverseSlope = Math.abs(slope) < .0001 ? 0 : 1 / slope, span = steep ? rasterHeight : rasterWidth;
     const pointAt = (distance) => {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((distance * Math.min(scaleX, scaleY) + seed) * .045) : 0;
       return steep ? { x: rawX * scaleX + wave, y: rawY * scaleY } : { x: rawX * scaleX, y: rawY * scaleY + wave };
     };
-    const solidThreshold = .68 + contrast * (.50 - .68), toneAt = (distance) => {
-      const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY);
-      return px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight ? shade[edgeAt(px, py)] : 0;
-    }, renderRun = (from, to) => {
-      const points = [], widths = [], samples = Math.max(3, Math.ceil((to - from) / 4));
-      for (let i = 0; i <= samples; i += 1) {
-        const distance = from + (to - from) * i / samples, tone = toneAt(distance), darkness = threshold < solidThreshold ? Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(solidThreshold - threshold, .001))), taper) : Math.pow(Math.min(1, Math.max(0, tone)), taper);
-        points.push(pointAt(distance)); widths.push(settings.weight * (.3 + darkness * 1.5));
-      }
-      const angleDelta = Math.abs(Math.atan2(Math.sin(angle * Math.PI / 180 - settings.angle * Math.PI / 180), Math.cos(angle * Math.PI / 180 - settings.angle * Math.PI / 180)));
-      return variableDottedRun(points, widths, settings, ink, angleDelta < Math.PI * .28);
-    };
+    const renderRun = (from, to, tone = .5) => { const darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(1 - threshold, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 8)); for (let i = 0; i <= samples; i += 1) points.push(pointAt(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); };
     let start = null, tone = .5;
     for (let distance = 0; distance <= span; distance += 1) {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY), inside = px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight, index = inside ? edgeAt(px, py) : 0, on = inside && visible[index] && shade[index] > threshold;
@@ -483,9 +422,8 @@ function applyViewportAppearance(runtime, paper, ink, settings) {
     uniforms.uLight.value.set(Math.cos(radians), .8, Math.sin(radians)).normalize();
   });
 }
-function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState, onVectorChange }) {
-  const host = useRef(null), live = useRef(null), vectorCallback = useRef(onVectorChange), vectorFrame = useRef(null), requestVectorRef = useRef(null);
-  useEffect(() => { vectorCallback.current = onVectorChange; }, [onVectorChange]);
+function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState }) {
+  const host = useRef(null), live = useRef(null);
   useEffect(() => {
     const element = host.current, scene = new THREE.Scene(), orthographic = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 100), perspective = new THREE.PerspectiveCamera(36, 1, .1, 100), camera = orthographic;
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -495,18 +433,12 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
     outlinePass.edgeStrength = 2.2; outlinePass.edgeGlow = 0; outlinePass.edgeThickness = 1.15; outlinePass.pulsePeriod = 0; outlinePass.visibleEdgeColor.set(ink); outlinePass.hiddenEdgeColor.set(ink);
     composer.addPass(renderPass); composer.addPass(outlinePass); outlinePass.renderToScreen = true;
     const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, .75, 0); controls.minDistance = 4.5; controls.maxDistance = 18;
-    const requestVector = () => {
-      if (vectorFrame.current) return;
-      vectorFrame.current = requestAnimationFrame(() => { vectorFrame.current = null; if (live.current) vectorCallback.current?.(live.current); });
-    };
-    requestVectorRef.current = requestVector;
-    controls.addEventListener("change", requestVector);
     scene.add(new THREE.HemisphereLight(0xfffdf6, 0x766d5c, 2.6)); const light = new THREE.DirectionalLight(0xffffff, 3.2); light.position.set(4, 7, 4); scene.add(light);
     const model = presetModel(preset); scene.add(model); outlinePass.selectedObjects = meshTargets(model); live.current = { scene, camera, orthographic, perspective, renderer, composer, renderPass, outlinePass, controls, model, cameraMode: "orthographic" }; onRuntime(live.current);
-    const resize = () => { const rect = element.getBoundingClientRect(), aspect = rect.width / Math.max(rect.height, 1), viewHeight = 7.4; orthographic.top = viewHeight / 2; orthographic.bottom = -viewHeight / 2; orthographic.left = -viewHeight * aspect / 2; orthographic.right = viewHeight * aspect / 2; orthographic.updateProjectionMatrix(); perspective.aspect = aspect; perspective.updateProjectionMatrix(); renderer.setSize(rect.width, rect.height, false); composer.setSize(rect.width, rect.height); outlinePass.resolution.set(rect.width, rect.height); scene.traverse((item) => { if (item.material?.resolution) item.material.resolution.set(rect.width, rect.height); }); frameView(live.current, rect.width, rect.height); requestVector(); };
-    const observer = new ResizeObserver(resize); observer.observe(element); resize(); requestVector();
+    const resize = () => { const rect = element.getBoundingClientRect(), aspect = rect.width / Math.max(rect.height, 1), viewHeight = 7.4; orthographic.top = viewHeight / 2; orthographic.bottom = -viewHeight / 2; orthographic.left = -viewHeight * aspect / 2; orthographic.right = viewHeight * aspect / 2; orthographic.updateProjectionMatrix(); perspective.aspect = aspect; perspective.updateProjectionMatrix(); renderer.setSize(rect.width, rect.height, false); composer.setSize(rect.width, rect.height); outlinePass.resolution.set(rect.width, rect.height); scene.traverse((item) => { if (item.material?.resolution) item.material.resolution.set(rect.width, rect.height); }); frameView(live.current, rect.width, rect.height); };
+    const observer = new ResizeObserver(resize); observer.observe(element); resize();
     let frame; const draw = () => { controls.update(); composer.render(); frame = requestAnimationFrame(draw); }; draw();
-    return () => { cancelAnimationFrame(frame); if (vectorFrame.current) cancelAnimationFrame(vectorFrame.current); requestVectorRef.current = null; controls.removeEventListener("change", requestVector); observer.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); element.replaceChildren(); };
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); element.replaceChildren(); };
   }, []);
   useEffect(() => {
     const current = live.current; if (!current) return;
@@ -516,12 +448,11 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
     const current = live.current; if (!current || current.cameraMode === cameraMode) return;
     const next = cameraMode === "perspective" ? current.perspective : current.orthographic;
     next.position.copy(current.camera.position); next.quaternion.copy(current.camera.quaternion); next.updateProjectionMatrix();
-    current.controls.object = next; current.camera = next; current.cameraMode = cameraMode; current.renderPass.camera = next; current.outlinePass.renderCamera = next; current.controls.update(); frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight); onRuntime(current); requestVectorRef.current?.();
+    current.controls.object = next; current.camera = next; current.cameraMode = cameraMode; current.renderPass.camera = next; current.outlinePass.renderCamera = next; current.controls.update(); frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight); onRuntime(current);
   }, [cameraMode, onRuntime]);
   useEffect(() => {
     if (!live.current) return;
     applyViewportAppearance(live.current, paper, ink, settings);
-    requestVectorRef.current?.();
   }, [paper, ink, settings]);
   useEffect(() => {
     if (!live.current) return;
@@ -535,7 +466,7 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
         current.outlinePass.selectedObjects = meshTargets(next);
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
-        onRuntime(current); requestVectorRef.current?.();
+        onRuntime(current);
       };
       if (BUNDLED_ASSETS[preset]) {
         onLoadState({ status: "loading", message: "" });
@@ -574,7 +505,7 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
         current.controls.update();
-        onRuntime(current); requestVectorRef.current?.();
+        onRuntime(current);
         onLoadState({ status: "ready", message: "" });
       } catch (error) { fail(error); }
     };
@@ -608,13 +539,8 @@ function PanelSection({ name, label, open, onToggle, className = "", children })
   </section>;
 }
 export function App() {
-  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [vectorSvg, setVectorSvg] = useState(""), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
+  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
   const runtime = useRef(null), input = useRef(null), panelDrag = useRef(null);
-  const modelTitle = model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau";
-  const updateVectorPreview = useCallback((current) => {
-    if (!current?.model || !current?.camera) return;
-    setVectorSvg(outputSvg(current.model, current.camera, settings, modelTitle, ink, paper));
-  }, [settings, modelTitle, ink, paper]);
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 2200); };
   const update = (key, value) => setSettings({ ...settings, [key]: value });
   const toggleSection = (name) => setOpenSections((current) => ({ ...current, [name]: !current[name] }));
@@ -654,39 +580,17 @@ export function App() {
     setPreset(null); setModel({ file, name: file.name, size: file.size }); notify("Reading model locally");
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
-  const triggerDownload = (blob, filename) => {
-    const link = document.createElement("a"), url = URL.createObjectURL(blob);
-    link.href = url; link.download = filename; link.style.display = "none";
-    document.body.appendChild(link); link.click(); link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-  };
   const download = () => {
-    try {
-      const svg = vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
-      triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg");
-      notify("SVG saved");
-    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed"); }
-  };
-  const downloadPng = async () => {
-    const svg = (vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper)).replace(/<rect\b[^>]*\/?>/i, "");
-    const svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    try {
-      const image = new Image();
-      await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = svgUrl; });
-      const canvas = document.createElement("canvas"); canvas.width = 1000; canvas.height = 720;
-      const context = canvas.getContext("2d"); context.clearRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-      if (!blob) throw new Error("PNG encoding failed");
-      triggerDownload(blob, (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"); notify("Transparent PNG saved");
-    } catch (error) { console.error("PNG export failed", error); notify("PNG export failed"); }
-    URL.revokeObjectURL(svgUrl);
+    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau", ink, paper);
+    const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
   };
   const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
   return <main className={"app-shell" + (showPanel ? "" : " panel-hidden") + (isFullscreen ? " is-fullscreen" : "")} id="top">
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
       <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a real SVG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onVectorChange={updateVectorPreview} onLoadState={setLoadState}/>{vectorSvg && <div className="vector-stage" aria-hidden="true" dangerouslySetInnerHTML={{ __html: vectorSvg }}/>}<div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><span>HatchKit</span><Sparkles size={15}/></div><div className="panel-divider"/>
@@ -694,7 +598,7 @@ export function App() {
       <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><div className="camera-note"><Maximize2 size={14}/> {cameraMode === "perspective" ? "perspective view" : "axonometric view"} · orbit directly in the 3D view</div><button className={"toggle-row " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls"><div className="style-row"><span>Line type</span><div className="segmented hatch-style"><button className={settings.lineStyle === "straight" ? "selected" : ""} onClick={() => update("lineStyle", "straight")}>Straight</button><button className={settings.lineStyle === "wave" ? "selected" : ""} onClick={() => update("lineStyle", "wave")}>Wavy</button></div></div>{settings.lineStyle === "wave" && <Range label="Wave curvature" value={settings.wave} min={8} max={24} step={.5} suffix=" px" onChange={(v) => update("wave", v)}/>}<Range label="Line spacing" value={settings.spacing} min={4} max={18} suffix=" px" onChange={(v) => update("spacing", v)}/><Range label="Stroke weight" value={settings.weight} min={.5} max={4} step={.05} suffix=" px" onChange={(v) => update("weight", v)}/><Range label="Stroke taper" value={settings.taper ?? 2.2} min={.5} max={5} step={.1} suffix=" ×" onChange={(v) => update("taper", v)}/><Range label="Raggedness" value={settings.raggedness ?? 0} min={0} max={100} suffix="%" onChange={(v) => update("raggedness", v)}/><Range label="Outline thickness" value={settings.outline} min={0} max={4} step={.1} suffix=" px" onChange={(v) => update("outline", v)}/><Range label="Contrast" value={settings.contrast} min={20} max={100} suffix="%" onChange={(v) => update("contrast", v)}/><Range label="Hatch angle" value={settings.angle} min={-45} max={45} suffix="°" onChange={(v) => update("angle", v)}/><Range label="Light direction" value={settings.light} min={-180} max={180} suffix="°" onChange={(v) => update("light", v)}/><button className={"toggle-row dotted-toggle " + (settings.dottedEnds ? "on" : "")} aria-pressed={settings.dottedEnds} onClick={() => update("dottedEnds", !settings.dottedEnds)}><span>Dotted line ends</span><span className="toggle-track"><span className="toggle-thumb"/></span></button>{settings.dottedEnds && <Range label="Dotted fade" value={settings.dottedFade ?? 58} min={0} max={100} suffix="%" onChange={(v) => update("dottedFade", v)}/>}</PanelSection>
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
-      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="png-button" onClick={downloadPng}><ImageDown size={15}/> PNG</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
+      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
     </aside>
     <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · vector export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
   </main>;
