@@ -369,17 +369,23 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       if (z < depth[index]) { depth[index] = z; shade[index] = face.shade; visible[index] = 1; }
     }
   }
-  const paths = [], gap = Math.max(4, settings.spacing), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (y, threshold, angle = settings.angle, seed = 0) => {
-    const scaleX = width / rasterWidth, scaleY = height / rasterHeight, slope = Math.tan(angle * Math.PI / 180), tangent = { x: Math.cos(angle * Math.PI / 180), y: Math.sin(angle * Math.PI / 180) }, wavePoint = (x) => ({ x: x * scaleX, y: y + x * scaleX * slope + (settings.lineStyle === "wave" ? settings.wave * Math.sin((x * scaleX * tangent.x + y * tangent.y + seed) * .045) : 0) }), renderRun = (from, to, tone = .5) => { const darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(1 - threshold, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 10)); for (let i = 0; i <= samples; i += 1) points.push(wavePoint(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); }; let start = null, tone = .5;
-    for (let x = 0; x <= rasterWidth; x += 1) {
-      const px = Math.min(rasterWidth - 1, x), py = Math.max(0, Math.min(rasterHeight - 1, Math.round((y + x * scaleX * slope) / scaleY))), index = edgeAt(px, py), on = visible[index] && shade[index] > threshold;
-      if (on && start === null) { start = x; tone = shade[index]; }
+  const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
+    const radians = angle * Math.PI / 180, slope = Math.tan(radians), steep = Math.abs(Math.cos(radians)) < Math.abs(Math.sin(radians)), inverseSlope = Math.abs(slope) < .0001 ? 0 : 1 / slope, span = steep ? rasterHeight : rasterWidth;
+    const pointAt = (distance) => {
+      const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((distance * Math.min(scaleX, scaleY) + seed) * .045) : 0;
+      return steep ? { x: rawX * scaleX + wave, y: rawY * scaleY } : { x: rawX * scaleX, y: rawY * scaleY + wave };
+    };
+    const renderRun = (from, to, tone = .5) => { const darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(1 - threshold, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 8)); for (let i = 0; i <= samples; i += 1) points.push(pointAt(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); };
+    let start = null, tone = .5;
+    for (let distance = 0; distance <= span; distance += 1) {
+      const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY), inside = px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight, index = inside ? edgeAt(px, py) : 0, on = inside && visible[index] && shade[index] > threshold;
+      if (on && start === null) { start = distance; tone = shade[index]; }
       if (on && start !== null) tone = Math.max(tone, shade[index]);
-      if ((!on || x === rasterWidth) && start !== null) { if (x - start > 2) paths.push(renderRun(start, Math.min(x, rasterWidth), tone)); start = null; tone = .5; }
+      if ((!on || distance === span) && start !== null) { if (distance - start > 2) paths.push(renderRun(start, Math.min(distance, span), tone)); start = null; tone = .5; }
     }
   };
-  for (let y = -height; y < height * 1.5; y += gap) appendScanline(y, primaryThreshold, settings.angle, y);
-  for (let y = -height; y < height * 1.5; y += gap * 1.6) appendScanline(y, secondaryThreshold, settings.angle + 90, y + 17);
+  for (let intercept = -rasterHeight; intercept < rasterHeight * 1.5; intercept += gap) appendScanline(intercept, primaryThreshold, settings.angle, intercept);
+  for (let intercept = -rasterWidth; intercept < rasterWidth * 1.5; intercept += gap * 1.6) appendScanline(intercept, secondaryThreshold, settings.angle + 90, intercept + 17);
   const boundary = [];
   for (let y = 0; y < rasterHeight; y += 2) { let left = -1, right = -1; for (let x = 0; x < rasterWidth; x += 1) if (visible[edgeAt(x, y)]) { if (left < 0) left = x; right = x; } if (left >= 0) boundary.push([left * width / rasterWidth, y * height / rasterHeight, right * width / rasterWidth]); }
   const contour = boundary.map((point) => ({ x: point[0], y: point[1] })).concat(boundary.slice().reverse().map((point) => ({ x: point[2], y: point[1] })));
