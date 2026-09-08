@@ -605,7 +605,7 @@ export function App() {
       const svg = vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
       triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg");
       notify("SVG saved");
-    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed"); }
+    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed: " + (error?.message || "unknown error")); }
   };
   const downloadPng = async () => {
     const svg = (vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper)).replace(/<rect\b[^>]*\/?>/i, "");
@@ -618,7 +618,7 @@ export function App() {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("PNG encoding failed");
       triggerDownload(blob, (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"); notify("Transparent PNG saved");
-    } catch (error) { notify("PNG export failed"); }
+    } catch (error) { console.error("PNG export failed", error); notify("PNG export failed: " + (error?.message || "unknown error")); }
     URL.revokeObjectURL(svgUrl);
   };
   const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
