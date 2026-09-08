@@ -307,6 +307,41 @@ function dottedRun(points, strokeWidth, settings, ink, allowDotted = true) {
   drawTerminal(0, 1); drawTerminal(points.length - 1, -1);
   return raggedPath(solid) + segments.join("");
 }
+function variableStrokePath(points, widths, ink, opacity = 1) {
+  if (points.length < 2) return "";
+  const left = [], right = [];
+  for (let i = 0; i < points.length; i += 1) {
+    const previous = points[Math.max(0, i - 1)], next = points[Math.min(points.length - 1, i + 1)];
+    const dx = next.x - previous.x, dy = next.y - previous.y, length = Math.hypot(dx, dy) || 1;
+    const nx = -dy / length, ny = dx / length, half = Math.max(.01, widths[i] || 0) * .5;
+    left.push({ x: points[i].x + nx * half, y: points[i].y + ny * half });
+    right.push({ x: points[i].x - nx * half, y: points[i].y - ny * half });
+  }
+  const all = left.concat(right.reverse()), d = all.map((point, index) => (index ? "L" : "M") + point.x.toFixed(2) + " " + point.y.toFixed(2)).join("") + "Z";
+  return '<path fill="' + ink + '" stroke="none"' + (opacity < .999 ? ' fill-opacity="' + opacity.toFixed(3) + '"' : '') + ' d="' + d + '"/>';
+}
+function variableDottedRun(points, widths, settings, ink, allowDotted = true) {
+  if (points.length < 2) return "";
+  if (!allowDotted || !settings.dottedEnds || points.length < 5) return variableStrokePath(points, widths, ink);
+  const strength = Math.min(1, Math.max(0, settings.dottedFade ?? 58) / 100), random = (index, point) => {
+    const value = Math.sin((index + 1) * 12.9898 + point.x * .137 + point.y * .173) * 43758.5453;
+    return value - Math.floor(value);
+  };
+  const end = Math.max(1, Math.floor(points.length * (.06 + strength * .28))), leftWidth = widths.slice(0, end).reduce((sum, value) => sum + value, 0) / end, rightWidth = widths.slice(-end).reduce((sum, value) => sum + value, 0) / end;
+  const brightAtEnd = leftWidth < rightWidth ? 0 : 1, segments = [];
+  const solidStart = brightAtEnd ? 0 : end, solidEnd = brightAtEnd ? points.length - end : points.length;
+  if (solidEnd - solidStart > 1) segments.push(variableStrokePath(points.slice(solidStart, solidEnd), widths.slice(solidStart, solidEnd), ink));
+  const drawTerminal = (start, direction) => {
+    for (let i = 0; i < end; i += 1) {
+      const index = start + i * direction, nextIndex = start + (i + 1) * direction;
+      if (!points[nextIndex]) continue;
+      const from = points[index], to = points[nextIndex], dashLength = .22 + random(i, from) * .5, shortTo = { x: from.x + (to.x - from.x) * dashLength, y: from.y + (to.y - from.y) * dashLength }, progress = (i + 1) / end, opacity = .04 + (1 - strength) * .25 + Math.pow(progress, 2.7) * (.7 + strength * .25);
+      segments.push(variableStrokePath([from, shortTo], [widths[index] || 0, (widths[index] || 0) * .72], ink, opacity));
+    }
+  };
+  drawTerminal(brightAtEnd ? points.length - 1 : 0, brightAtEnd ? -1 : 1);
+  return segments.join("");
+}
 function fallbackSvg(settings, title, ink, paper) {
   const gap = Math.max(5, settings.spacing), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), angle = settings.angle * Math.PI / 180, slope = Math.tan(angle), lines = [];
   const makePoints = (x1, y1, x2, y2, seed = 0) => { const length = Math.hypot(x2 - x1, y2 - y1), nx = -(y2 - y1) / Math.max(length, 1), ny = (x2 - x1) / Math.max(length, 1), count = Math.max(2, Math.ceil(length / 14)), points = []; for (let i = 0; i <= count; i += 1) { const t = i / count, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((t * length + seed * 17) * .045) : 0; points.push({ x: x1 + (x2 - x1) * t + nx * wave, y: y1 + (y2 - y1) * t + ny * wave }); } return points; };
@@ -336,16 +371,15 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
   root.updateMatrixWorld(true); camera.updateMatrixWorld(true);
   root.traverse((mesh) => {
     if (!mesh.isMesh || mesh.userData.silhouette || !mesh.geometry?.attributes?.position) return;
-    const geo = mesh.geometry, attr = geo.attributes.position, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 7000));
+    const geo = mesh.geometry, attr = geo.attributes.position, normalAttr = geo.attributes.normal, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 12000)), normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
     for (let f = 0; f < count; f += stride) {
       const ids = [0, 1, 2].map((n) => index ? index.getX(f * 3 + n) : f * 3 + n);
       const a = new THREE.Vector3().fromBufferAttribute(attr, ids[0]).applyMatrix4(mesh.matrixWorld), b = new THREE.Vector3().fromBufferAttribute(attr, ids[1]).applyMatrix4(mesh.matrixWorld), c = new THREE.Vector3().fromBufferAttribute(attr, ids[2]).applyMatrix4(mesh.matrixWorld);
-      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize(), center = a.clone().add(b).add(c).multiplyScalar(1 / 3);
-      if (normal.dot(camera.position.clone().sub(center).normalize()) < .015) continue;
+      const normal = b.clone().sub(a).cross(c.clone().sub(a)).normalize();
       const p = [a, b, c].map((point) => project(point, camera, width, height));
       if (p.every((point) => point.x < -40 || point.x > width + 40 || point.y < -40 || point.y > height + 40)) continue;
-      const rawShade = 1 - Math.max(0, Math.min(1, normal.dot(light) * .78 + .22)), shadeExponent = 1.8 + (.62 - 1.8) * contrast;
-      faces.push({ p, depth: (p[0].z + p[1].z + p[2].z) / 3, shade: Math.pow(rawShade, shadeExponent) });
+      const normals = (normalAttr ? ids : [0, 0, 0]).map((id) => normalAttr ? new THREE.Vector3().fromBufferAttribute(normalAttr, id).applyMatrix3(normalMatrix).normalize() : normal.clone().applyMatrix3(normalMatrix).normalize());
+      faces.push({ p, normals, depth: (p[0].z + p[1].z + p[2].z) / 3 });
     }
   });
   if (!faces.length) return fallbackSvg(settings, title, ink, paper);
@@ -367,7 +401,11 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
     for (let y = minY; y <= maxY; y += 1) for (let x = minX; x <= maxX; x += 1) {
       const weights = barycentric(x + .5, y + .5, p[0], p[1], p[2]); if (!weights) continue;
       const z = p[0].z * weights[0] + p[1].z * weights[1] + p[2].z * weights[2], index = edgeAt(x, y);
-      if (z < depth[index]) { depth[index] = z; shade[index] = face.shade; visible[index] = 1; }
+      if (z < depth[index]) {
+        const normal = face.normals[0].clone().multiplyScalar(weights[0]).add(face.normals[1].clone().multiplyScalar(weights[1])).add(face.normals[2].clone().multiplyScalar(weights[2])).normalize();
+        const rawShade = 1 - Math.max(0, Math.min(1, normal.dot(light) * .78 + .22));
+        depth[index] = z; shade[index] = Math.pow(rawShade, 1.8 + (.62 - 1.8) * contrast); visible[index] = 1;
+      }
     }
   }
   const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
@@ -376,7 +414,18 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((distance * Math.min(scaleX, scaleY) + seed) * .045) : 0;
       return steep ? { x: rawX * scaleX + wave, y: rawY * scaleY } : { x: rawX * scaleX, y: rawY * scaleY + wave };
     };
-    const solidThreshold = .68 + contrast * (.50 - .68), renderRun = (from, to, tone = .5) => { const darknessRange = threshold < solidThreshold ? solidThreshold - threshold : 1 - threshold, darkness = Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(darknessRange, .001))), taper), strokeWidth = settings.weight * (.3 + darkness * 1.5), points = [], samples = Math.max(2, Math.ceil((to - from) / 8)); for (let i = 0; i <= samples; i += 1) points.push(pointAt(from + (to - from) * i / samples)); return dottedRun(points, strokeWidth, settings, ink); };
+    const solidThreshold = .68 + contrast * (.50 - .68), toneAt = (distance) => {
+      const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY);
+      return px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight ? shade[edgeAt(px, py)] : 0;
+    }, renderRun = (from, to) => {
+      const points = [], widths = [], samples = Math.max(3, Math.ceil((to - from) / 4));
+      for (let i = 0; i <= samples; i += 1) {
+        const distance = from + (to - from) * i / samples, tone = toneAt(distance), darkness = threshold < solidThreshold ? Math.pow(Math.min(1, Math.max(0, (tone - threshold) / Math.max(solidThreshold - threshold, .001))), taper) : Math.pow(Math.min(1, Math.max(0, tone)), taper);
+        points.push(pointAt(distance)); widths.push(settings.weight * (.3 + darkness * 1.5));
+      }
+      const angleDelta = Math.abs(Math.atan2(Math.sin(angle * Math.PI / 180 - settings.angle * Math.PI / 180), Math.cos(angle * Math.PI / 180 - settings.angle * Math.PI / 180)));
+      return variableDottedRun(points, widths, settings, ink, angleDelta < Math.PI * .28);
+    };
     let start = null, tone = .5;
     for (let distance = 0; distance <= span; distance += 1) {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, px = Math.round(rawX), py = Math.round(rawY), inside = px >= 0 && px < rasterWidth && py >= 0 && py < rasterHeight, index = inside ? edgeAt(px, py) : 0, on = inside && visible[index] && shade[index] > threshold;
@@ -626,7 +675,7 @@ export function App() {
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
       <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a real SVG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onVectorChange={updateVectorPreview} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onVectorChange={updateVectorPreview} onLoadState={setLoadState}/>{vectorSvg && <div className="vector-stage" aria-hidden="true" dangerouslySetInnerHTML={{ __html: vectorSvg }}/>}<div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><span>HatchKit</span><Sparkles size={15}/></div><div className="panel-divider"/>
