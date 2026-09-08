@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -533,9 +533,8 @@ function PanelSection({ name, label, open, onToggle, className = "", children })
   </section>;
 }
 export function App() {
-  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [runtimeVersion, setRuntimeVersion] = useState(0), [loadState, setLoadState] = useState({ status: "idle", message: "" });
+  const [settings, setSettings] = useState(INITIAL), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: true, hatching: true, colors: true }), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
   const runtime = useRef(null), input = useRef(null), panelDrag = useRef(null);
-  const svg = useMemo(() => outputSvg(runtime.current?.model, runtime.current?.camera, settings, model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau", ink, paper), [settings, model, preset, ink, paper, runtimeVersion]);
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 2200); };
   const update = (key, value) => setSettings({ ...settings, [key]: value });
   const toggleSection = (name) => setOpenSections((current) => ({ ...current, [name]: !current[name] }));
@@ -576,6 +575,7 @@ export function App() {
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
   const download = () => {
+    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau", ink, paper);
     const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
     link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
   };
@@ -584,7 +584,7 @@ export function App() {
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
       <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a real SVG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; setRuntimeVersion((version) => version + 1); }} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><span>HatchKit</span><Sparkles size={15}/></div><div className="panel-divider"/>
