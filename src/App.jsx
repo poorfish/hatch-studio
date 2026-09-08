@@ -332,7 +332,7 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
   // Keep the export in the same normalized camera view as the canvas, but use a
   // denser screen-space raster than the preview's display pixels. This avoids
   // stair-stepped silhouettes and missing hatch runs in the standalone SVG.
-  const width = 1000, height = 720, rasterWidth = 720, rasterHeight = 518, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
+  const width = 1000, height = 720, rasterWidth = 720, rasterHeight = 518, contrast = settings.contrast / 100, faces = [], light = new THREE.Vector3(Math.cos(settings.light * Math.PI / 180), .8, Math.sin(settings.light * Math.PI / 180)).normalize();
   root.updateMatrixWorld(true); camera.updateMatrixWorld(true);
   root.traverse((mesh) => {
     if (!mesh.isMesh || mesh.userData.silhouette || !mesh.geometry?.attributes?.position) return;
@@ -370,7 +370,7 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
       if (z < depth[index]) { depth[index] = z; shade[index] = face.shade; visible[index] = 1; }
     }
   }
-  const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), contrast = settings.contrast / 100, taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
+  const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
     const radians = angle * Math.PI / 180, slope = Math.tan(radians), steep = Math.abs(Math.cos(radians)) < Math.abs(Math.sin(radians)), inverseSlope = Math.abs(slope) < .0001 ? 0 : 1 / slope, span = steep ? rasterHeight : rasterWidth;
     const pointAt = (distance) => {
       const rawX = steep ? intercept + distance * inverseSlope : distance, rawY = steep ? distance : intercept + distance * slope, wave = settings.lineStyle === "wave" ? settings.wave * Math.sin((distance * Math.min(scaleX, scaleY) + seed) * .045) : 0;
@@ -605,7 +605,7 @@ export function App() {
       const svg = vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper);
       triggerDownload(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }), (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg");
       notify("SVG saved");
-    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed: " + (error?.message || "unknown error")); }
+    } catch (error) { console.error("SVG export failed", error); notify("SVG export failed"); }
   };
   const downloadPng = async () => {
     const svg = (vectorSvg || outputSvg(runtime.current?.model, runtime.current?.camera, settings, modelTitle, ink, paper)).replace(/<rect\b[^>]*\/?>/i, "");
@@ -618,7 +618,7 @@ export function App() {
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("PNG encoding failed");
       triggerDownload(blob, (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.png"); notify("Transparent PNG saved");
-    } catch (error) { console.error("PNG export failed", error); notify("PNG export failed: " + (error?.message || "unknown error")); }
+    } catch (error) { console.error("PNG export failed", error); notify("PNG export failed"); }
     URL.revokeObjectURL(svgUrl);
   };
   const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
