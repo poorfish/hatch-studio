@@ -401,6 +401,31 @@ function outputSvg(root, camera, settings, title, ink, paper) {
 function Range({ label, value, min, max, step, suffix, onChange }) {
   return <label className="range-row"><span>{label}</span><output>{value}{suffix}</output><input aria-label={label} type="range" min={min} max={max} step={step || 1} value={value} onChange={(e) => onChange(Number(e.target.value))}/></label>;
 }
+function hexRgb(value) {
+  const normalized = String(value || "#000000").replace("#", "");
+  const hex = normalized.length === 3 ? normalized.split("").map((item) => item + item).join("") : normalized;
+  return { r: parseInt(hex.slice(0, 2), 16) || 0, g: parseInt(hex.slice(2, 4), 16) || 0, b: parseInt(hex.slice(4, 6), 16) || 0 };
+}
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob), link = document.createElement("a");
+  link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+function transparentPngBlob(source, paper, ink) {
+  if (!source?.width || !source?.height) throw new Error("The 3D canvas is not ready");
+  const canvas = document.createElement("canvas"); canvas.width = source.width; canvas.height = source.height;
+  const context = canvas.getContext("2d"); if (!context) throw new Error("PNG canvas is unavailable");
+  context.drawImage(source, 0, 0);
+  const image = context.getImageData(0, 0, canvas.width, canvas.height), pixels = image.data, bg = hexRgb(paper), fg = hexRgb(ink);
+  const bgLum = .2126 * bg.r + .7152 * bg.g + .0722 * bg.b, fgLum = .2126 * fg.r + .7152 * fg.g + .0722 * fg.b, denominator = bgLum - fgLum;
+  for (let i = 0; i < pixels.length; i += 4) {
+    const pixelLum = .2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2];
+    const coverage = denominator > .001 ? Math.max(0, Math.min(1, (bgLum - pixelLum) / denominator)) : 1;
+    pixels[i] = fg.r; pixels[i + 1] = fg.g; pixels[i + 2] = fg.b; pixels[i + 3] = Math.round(coverage * 255);
+  }
+  context.putImageData(image, 0, 0);
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG encoding failed")), "image/png"));
+}
 function applyViewportAppearance(runtime, paper, ink, settings) {
   if (!runtime) return;
   runtime.scene.background = new THREE.Color(paper);
@@ -426,7 +451,7 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
   const host = useRef(null), live = useRef(null);
   useEffect(() => {
     const element = host.current, scene = new THREE.Scene(), orthographic = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 100), perspective = new THREE.PerspectiveCamera(36, 1, .1, 100), camera = orthographic;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     const initialPosition = new THREE.Vector3(7.3, 5.4, 8.3); orthographic.position.copy(initialPosition); perspective.position.copy(initialPosition); scene.background = new THREE.Color(paper);
     renderer.setClearColor(paper, 1); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; element.appendChild(renderer.domElement);
     const composer = new EffectComposer(renderer), renderPass = new RenderPass(scene, camera), outlinePass = new OutlinePass(new THREE.Vector2(1, 1), scene, camera);
@@ -580,16 +605,18 @@ export function App() {
     setPreset(null); setModel({ file, name: file.name, size: file.size }); notify("Reading model locally");
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
-  const download = () => {
-    const svg = outputSvg(runtime.current?.model, runtime.current?.camera, settings, model?.name || PRESETS.find((item) => item.id === preset)?.caption || "Maungawhau", ink, paper);
-    const link = document.createElement("a"), url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-    link.href = url; link.download = (model?.name || "maungawhau").replace(/\.[^.]+$/, "") + "-hatch.svg"; link.click(); URL.revokeObjectURL(url); notify("SVG saved");
+  const download = async () => {
+    try {
+      const blob = await transparentPngBlob(runtime.current?.renderer?.domElement, paper, ink);
+      saveBlob(blob, (model?.name || PRESETS.find((item) => item.id === preset)?.caption || "hatch-studio").replace(/\.[^.]+$/, "") + "-hatch.png");
+      notify("Transparent PNG saved");
+    } catch (error) { console.error("PNG export failed", error); notify("PNG export failed"); }
   };
   const resetSettings = () => { setSettings({ ...INITIAL }); notify("Settings reset"); };
   return <main className={"app-shell" + (showPanel ? "" : " panel-hidden") + (isFullscreen ? " is-fullscreen" : "")} id="top">
-    <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> SVG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
+    <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> PNG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
-      <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a real SVG built from outlines and shade-driven hatch strokes.</p></div>
+      <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a transparent PNG built from outlines and shade-driven hatch strokes.</p></div>
       <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState}/><div className="interaction-hint" style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
@@ -598,8 +625,8 @@ export function App() {
       <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><div className="camera-note"><Maximize2 size={14}/> {cameraMode === "perspective" ? "perspective view" : "axonometric view"} · orbit directly in the 3D view</div><button className={"toggle-row " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls"><div className="style-row"><span>Line type</span><div className="segmented hatch-style"><button className={settings.lineStyle === "straight" ? "selected" : ""} onClick={() => update("lineStyle", "straight")}>Straight</button><button className={settings.lineStyle === "wave" ? "selected" : ""} onClick={() => update("lineStyle", "wave")}>Wavy</button></div></div>{settings.lineStyle === "wave" && <Range label="Wave curvature" value={settings.wave} min={8} max={24} step={.5} suffix=" px" onChange={(v) => update("wave", v)}/>}<Range label="Line spacing" value={settings.spacing} min={4} max={18} suffix=" px" onChange={(v) => update("spacing", v)}/><Range label="Stroke weight" value={settings.weight} min={.5} max={4} step={.05} suffix=" px" onChange={(v) => update("weight", v)}/><Range label="Stroke taper" value={settings.taper ?? 2.2} min={.5} max={5} step={.1} suffix=" ×" onChange={(v) => update("taper", v)}/><Range label="Raggedness" value={settings.raggedness ?? 0} min={0} max={100} suffix="%" onChange={(v) => update("raggedness", v)}/><Range label="Outline thickness" value={settings.outline} min={0} max={4} step={.1} suffix=" px" onChange={(v) => update("outline", v)}/><Range label="Contrast" value={settings.contrast} min={20} max={100} suffix="%" onChange={(v) => update("contrast", v)}/><Range label="Hatch angle" value={settings.angle} min={-45} max={45} suffix="°" onChange={(v) => update("angle", v)}/><Range label="Light direction" value={settings.light} min={-180} max={180} suffix="°" onChange={(v) => update("light", v)}/><button className={"toggle-row dotted-toggle " + (settings.dottedEnds ? "on" : "")} aria-pressed={settings.dottedEnds} onClick={() => update("dottedEnds", !settings.dottedEnds)}><span>Dotted line ends</span><span className="toggle-track"><span className="toggle-thumb"/></span></button>{settings.dottedEnds && <Range label="Dotted fade" value={settings.dottedFade ?? 58} min={0} max={100} suffix="%" onChange={(v) => update("dottedFade", v)}/>}</PanelSection>
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
-      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export SVG</button></div>
+      <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export PNG</button></div>
     </aside>
-    <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · vector export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
+    <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · PNG export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
   </main>;
 }
