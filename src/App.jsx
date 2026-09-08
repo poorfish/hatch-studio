@@ -371,7 +371,7 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
   root.updateMatrixWorld(true); camera.updateMatrixWorld(true);
   root.traverse((mesh) => {
     if (!mesh.isMesh || mesh.userData.silhouette || !mesh.geometry?.attributes?.position) return;
-    const geo = mesh.geometry, attr = geo.attributes.position, normalAttr = geo.attributes.normal, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 12000)), normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
+    const geo = mesh.geometry, attr = geo.attributes.position, normalAttr = geo.attributes.normal, index = geo.index, count = index ? index.count / 3 : attr.count / 3, stride = Math.max(1, Math.floor(count / 40000)), normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrixWorld);
     for (let f = 0; f < count; f += stride) {
       const ids = [0, 1, 2].map((n) => index ? index.getX(f * 3 + n) : f * 3 + n);
       const a = new THREE.Vector3().fromBufferAttribute(attr, ids[0]).applyMatrix4(mesh.matrixWorld), b = new THREE.Vector3().fromBufferAttribute(attr, ids[1]).applyMatrix4(mesh.matrixWorld), c = new THREE.Vector3().fromBufferAttribute(attr, ids[2]).applyMatrix4(mesh.matrixWorld);
@@ -407,6 +407,17 @@ function vectorizeMesh(root, camera, settings, title, ink, paper) {
         depth[index] = z; shade[index] = Math.pow(rawShade, 1.8 + (.62 - 1.8) * contrast); visible[index] = 1;
       }
     }
+  }
+  const shadeSource = shade.slice(), visibleSource = visible.slice();
+  for (let y = 1; y < rasterHeight - 1; y += 1) for (let x = 1; x < rasterWidth - 1; x += 1) {
+    let total = 0, samples = 0;
+    for (let oy = -1; oy <= 1; oy += 1) for (let ox = -1; ox <= 1; ox += 1) {
+      const neighbor = edgeAt(x + ox, y + oy);
+      if (visibleSource[neighbor]) { total += shadeSource[neighbor]; samples += 1; }
+    }
+    const current = edgeAt(x, y);
+    if (samples >= 3) shade[current] = total / samples;
+    if (!visibleSource[current] && samples >= 7) visible[current] = 1;
   }
   const paths = [], scaleX = width / rasterWidth, scaleY = height / rasterHeight, gap = Math.max(4, settings.spacing) / Math.min(scaleX, scaleY), taper = Math.max(settings.taper ?? 2.2, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26, appendScanline = (intercept, threshold, angle = settings.angle, seed = 0) => {
     const radians = angle * Math.PI / 180, slope = Math.tan(radians), steep = Math.abs(Math.cos(radians)) < Math.abs(Math.sin(radians)), inverseSlope = Math.abs(slope) < .0001 ? 0 : 1 / slope, span = steep ? rasterHeight : rasterWidth;
