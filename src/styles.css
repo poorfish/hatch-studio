@@ -61,4 +61,4 @@
 .is-fullscreen .control-panel.panel-dragging{user-select:none}
 .is-fullscreen .toast{display:none}
 .interaction-hint{opacity:0;visibility:hidden;transition:opacity .24s ease,visibility .24s ease}.interaction-hint.visible{opacity:1;visibility:visible}
-.mode-switch-bar .mode-switch-control{flex:1;min-width:0;margin-right:8px}.mode-switch-bar .mode-switch-control button{font-size:9px;padding:5px 3px}.image-adjustments{border-top:1px solid #343238;padding-top:12px}.image-adjustments .section-heading{margin-bottom:9px}
+.mode-switch-bar .mode-switch-control{flex:1;min-width:0;margin-right:0}.mode-switch-bar .mode-switch-control button{font-size:9px;padding:5px 3px}.image-adjustments{border-top:1px solid #343238;padding-top:12px}.image-adjustments .section-heading{margin-bottom:9px}
