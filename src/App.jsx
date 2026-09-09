@@ -495,7 +495,7 @@ function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoR
   }, [paper, ink, settings]);
   useEffect(() => {
     if (!live.current) return;
-    if (!source?.file && !source?.url) {
+    if (!source?.file) {
       const current = live.current;
       let cancelled = false;
       const swapPreset = (next, shouldFit = false) => {
@@ -577,7 +577,7 @@ function ImageViewport({ source, paper, ink, settings, onRuntime, onLoadState, o
   useEffect(() => {
     const element = host.current, canvas = canvasRef.current;
     if (!element || !canvas) return undefined;
-    if (!source?.file) {
+    if (!source?.file && !source?.url) {
       imageRef.current = null;
       drawRef.current = null;
       onLoadStateRef.current({ status: "idle", message: "" });
