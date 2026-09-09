@@ -460,7 +460,9 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
     composer.addPass(renderPass); composer.addPass(outlinePass); outlinePass.renderToScreen = true;
     const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.target.set(0, .75, 0); controls.minDistance = 4.5; controls.maxDistance = 18;
     scene.add(new THREE.HemisphereLight(0xfffdf6, 0x766d5c, 2.6)); const light = new THREE.DirectionalLight(0xffffff, 3.2); light.position.set(4, 7, 4); scene.add(light);
-    const model = presetModel(preset); scene.add(model); outlinePass.selectedObjects = meshTargets(model); live.current = { scene, camera, orthographic, perspective, renderer, composer, renderPass, outlinePass, controls, model, cameraMode: "orthographic" }; onRuntime(live.current);
+    // Bundled GLB presets are loaded asynchronously below. Start with an empty
+    // group so the old procedural bust never flashes before the real asset arrives.
+    const model = BUNDLED_ASSETS[preset] ? new THREE.Group() : presetModel(preset); scene.add(model); outlinePass.selectedObjects = meshTargets(model); live.current = { scene, camera, orthographic, perspective, renderer, composer, renderPass, outlinePass, controls, model, cameraMode: "orthographic" }; onRuntime(live.current);
     const resize = () => { const rect = element.getBoundingClientRect(), aspect = rect.width / Math.max(rect.height, 1), viewHeight = 7.4; orthographic.top = viewHeight / 2; orthographic.bottom = -viewHeight / 2; orthographic.left = -viewHeight * aspect / 2; orthographic.right = viewHeight * aspect / 2; orthographic.updateProjectionMatrix(); perspective.aspect = aspect; perspective.updateProjectionMatrix(); renderer.setSize(rect.width, rect.height, false); composer.setSize(rect.width, rect.height); outlinePass.resolution.set(rect.width, rect.height); scene.traverse((item) => { if (item.material?.resolution) item.material.resolution.set(rect.width, rect.height); }); frameView(live.current, rect.width, rect.height); };
     const observer = new ResizeObserver(resize); observer.observe(element); resize();
     let frame; const draw = () => { controls.update(); composer.render(); frame = requestAnimationFrame(draw); }; draw();
@@ -495,6 +497,12 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
         onRuntime(current);
       };
       if (BUNDLED_ASSETS[preset]) {
+        // Remove the previous model immediately while the preset asset loads so
+        // switching presets never shows stale geometry during the async gap.
+        current.scene.remove(current.model);
+        current.model = new THREE.Group();
+        current.scene.add(current.model);
+        current.outlinePass.selectedObjects = [];
         onLoadState({ status: "loading", message: "" });
           loadBundledModel(BUNDLED_ASSETS[preset]).then((object) => {
           const next = prepareImportedModel(object, ink);
@@ -503,8 +511,8 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
           swapPreset(next, true); onLoadState({ status: "ready", message: "" });
         }).catch((error) => {
           if (cancelled) return;
-          console.error("Bundled bust loading failed", error);
-          swapPreset(presetModel(preset)); onLoadState({ status: "idle", message: "" });
+          console.error("Bundled preset loading failed", error);
+          onLoadState({ status: "error", message: "Couldn’t load this preset model." });
         });
       } else {
         swapPreset(presetModel(preset)); onLoadState({ status: "idle", message: "" });
