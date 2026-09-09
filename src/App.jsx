@@ -30,10 +30,10 @@ const PRESETS = [
   { id: "snow", label: "Snow mountain", caption: "Snow mountain" },
 ];
 const IMAGE_PRESETS = [
-  { id: "portrait", label: "Dramatic portrait", src: portraitImage, sourceUrl: "https://unsplash.com/photos/a-mans-face-in-dramatic-black-and-white-lighting-ODVspOTOmu0", credit: "Unsplash · maks_d" },
-  { id: "statue", label: "Classical statue", src: statueImage, sourceUrl: "https://unsplash.com/photos/a-black-and-white-photo-of-a-statue-of-a-woman-RBfBcnu1TIc", credit: "Unsplash · Darius" },
-  { id: "vase", label: "Ceramic vase", src: vaseImage, sourceUrl: "https://unsplash.com/photos/a-close-up-of-a-vase-uscciPpiMY4", credit: "Unsplash · Jocelyn Morales" },
-  { id: "mountain", label: "Mountain valley", src: mountainImage, sourceUrl: "https://unsplash.com/photos/white-clouds-and-blue-sky-photography-sPDYu82-T6w", credit: "Unsplash · Dominik Jirovský" },
+  { id: "portrait", label: "Black & white woman", src: portraitImage, sourceUrl: "https://unsplash.com/photos/a-black-and-white-photo-of-a-woman-ulTlfysiASI", credit: "Unsplash · Ryanwar Hanif" },
+  { id: "statue", label: "White robot", src: statueImage, sourceUrl: "https://unsplash.com/photos/a-white-robot-is-standing-in-front-of-a-black-background-CjWsslYVnPI", credit: "Unsplash · Gabriele Malaspina" },
+  { id: "vase", label: "Outdoor portrait", src: vaseImage, sourceUrl: "https://unsplash.com/photos/shallow-focus-photography-of-woman-outdoor-during-day-rDEOVtE7vOs", credit: "Unsplash · Christopher Campbell" },
+  { id: "mountain", label: "Red frame & clouds", src: mountainImage, sourceUrl: "https://unsplash.com/photos/red-rectangular-frame-with-clouds-6T3lp2DPNdI", credit: "Unsplash+ · Getty Images" },
 ];
 const BUNDLED_ASSETS = { bust: bustAsset, knot: torusAsset, vase: vaseAsset };
 
