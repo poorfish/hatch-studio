@@ -49,6 +49,7 @@
    card stays above it and can be repositioned from its title bar. */
 .fullscreen-toggle{position:absolute;top:18px;left:18px;z-index:3;display:flex;align-items:center;justify-content:center;width:34px;height:34px;padding:0;border:1px solid rgba(255,255,255,.28);border-radius:8px;color:#77736f;background:color-mix(in srgb,var(--hint-paper, var(--paper)) 62%, transparent);box-shadow:0 5px 16px rgba(35,31,23,.08);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .fullscreen-toggle:hover{color:#403d39;background:color-mix(in srgb,var(--hint-paper, var(--paper)) 82%, transparent)}
+.mode-switch{display:grid;grid-template-columns:auto 1fr;align-items:center;gap:9px;margin:-3px 0 11px;color:#bcb8c1;font-size:10px}.mode-switch .segmented{min-width:0}.subgroup-label{border-top:1px solid #343238;padding-top:11px;margin-top:8px;margin-bottom:9px;color:#8e8a94;font-size:9px;letter-spacing:.08em;text-transform:uppercase}
 .panel-brand{cursor:default}
 .is-fullscreen{position:fixed;inset:0;width:100vw;height:100vh;min-height:100vh;padding:0;overflow:hidden;background:var(--paper)}
 .is-fullscreen .topbar,.is-fullscreen .hero-copy,.is-fullscreen .page-footer{display:none}
