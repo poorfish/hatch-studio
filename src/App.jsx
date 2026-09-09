@@ -15,6 +15,10 @@ import { Check, ChevronDown, Download, FileUp, Info, Maximize2, Minimize2, Mouse
 import bustAsset from "./assets/bust.glb";
 import torusAsset from "./assets/torus.glb";
 import vaseAsset from "./assets/vase.glb";
+import portraitImage from "./assets/image-presets/portrait.jpg";
+import statueImage from "./assets/image-presets/statue.jpg";
+import vaseImage from "./assets/image-presets/vase.jpg";
+import mountainImage from "./assets/image-presets/mountain.jpg";
 
 const PAPER = "#f7f4ec";
 const INITIAL = { spacing: 8, weight: 1.8, taper: 1.8, crossWeight: 1.12, outline: .5, raggedness: 0, contrast: 80, angle: -12, light: 35, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 58 };
@@ -24,6 +28,12 @@ const PRESETS = [
   { id: "knot", label: "KNOT", caption: "Torus knot" },
   { id: "vase", label: "Ceramic vase", caption: "Ceramic vase" },
   { id: "snow", label: "Snow mountain", caption: "Snow mountain" },
+];
+const IMAGE_PRESETS = [
+  { id: "portrait", label: "Dramatic portrait", src: portraitImage, sourceUrl: "https://unsplash.com/photos/a-mans-face-in-dramatic-black-and-white-lighting-ODVspOTOmu0", credit: "Unsplash · maks_d" },
+  { id: "statue", label: "Classical statue", src: statueImage, sourceUrl: "https://unsplash.com/photos/a-black-and-white-photo-of-a-statue-of-a-woman-RBfBcnu1TIc", credit: "Unsplash · Darius" },
+  { id: "vase", label: "Ceramic vase", src: vaseImage, sourceUrl: "https://unsplash.com/photos/a-close-up-of-a-vase-uscciPpiMY4", credit: "Unsplash · Jocelyn Morales" },
+  { id: "mountain", label: "Mountain valley", src: mountainImage, sourceUrl: "https://unsplash.com/photos/white-clouds-and-blue-sky-photography-sPDYu82-T6w", credit: "Unsplash · Dominik Jirovský" },
 ];
 const BUNDLED_ASSETS = { bust: bustAsset, knot: torusAsset, vase: vaseAsset };
 
@@ -574,7 +584,8 @@ function ImageViewport({ source, paper, ink, settings, onRuntime, onLoadState, o
       onRuntimeRef.current({ renderer: { domElement: canvas }, imageMode: true });
       return undefined;
     }
-    const image = new Image(), url = URL.createObjectURL(source.file);
+    const image = new Image(), objectUrl = source.file ? URL.createObjectURL(source.file) : null, url = objectUrl || source.url;
+    if (!url) return undefined;
     let cancelled = false;
     const draw = () => {
       const current = imageRef.current, currentSettings = settingsRef.current;
@@ -641,7 +652,7 @@ function ImageViewport({ source, paper, ink, settings, onRuntime, onLoadState, o
     image.onload = () => { if (cancelled) return; imageRef.current = image; onLoadStateRef.current({ status: "ready", message: "" }); draw(); onRuntimeRef.current({ renderer: { domElement: canvas }, imageMode: true }); };
     image.onerror = () => { if (!cancelled) onLoadStateRef.current({ status: "error", message: "Couldn’t read this image." }); };
     onLoadStateRef.current({ status: "loading", message: "" }); image.src = url;
-    return () => { cancelled = true; imageRef.current = null; drawRef.current = null; URL.revokeObjectURL(url); };
+    return () => { cancelled = true; imageRef.current = null; drawRef.current = null; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [source]);
   useEffect(() => {
     const element = host.current, canvas = canvasRef.current; if (!element || !canvas) return undefined;
@@ -662,6 +673,9 @@ function PresetThumbnail({ kind }) {
   };
   return <svg className="preset-art" viewBox="0 0 96 56" aria-hidden="true"><rect x="5" y="8" width="86" height="40" rx="5" fill="#f7f4ec"/><path d={paths[kind]} fill="#e4dfcf" stroke="#17161a" strokeWidth="1.1"/><path d={paths[kind]} fill="none" stroke="#17161a" strokeWidth=".55" strokeDasharray="2 2" opacity=".72"/><path d="M9 48H87" stroke="#17161a" strokeWidth="1"/></svg>;
 }
+function ImagePresetThumbnail({ src, label }) {
+  return <img className="image-preset-art" src={src} alt="" loading="lazy" draggable="false" aria-label={label}/>;
+}
 function PanelSection({ name, label, open, onToggle, className = "", children }) {
   return <section className={`control-section ${className}`}>
     <button type="button" className="section-heading section-toggle" aria-expanded={open} onClick={() => onToggle(name)}>
@@ -680,7 +694,7 @@ function ImageAdjustmentControls({ settings, update }) {
   return <><Range label="Exposure" value={settings.exposure ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("exposure", v)}/><Range label="Brightness" value={settings.brightness ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("brightness", v)}/><Range label="Image contrast" value={settings.imageContrast ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("imageContrast", v)}/><Range label="Saturation" value={settings.saturation ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("saturation", v)}/><Range label="Hue" value={settings.hue ?? 0} min={-180} max={180} suffix="°" onChange={(v) => update("hue", v)}/><Range label="Temperature" value={settings.temperature ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("temperature", v)}/><Range label="Tint" value={settings.tint ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("tint", v)}/></>;
 }
 export function App() {
-  const [modelSettings, setModelSettings] = useState(INITIAL), [imageSettings, setImageSettings] = useState(IMAGE_INITIAL), [mode, setMode] = useState("model"), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: false, hatching: true, imageAdjustments: false, colors: true }), [showHint, setShowHint] = useState(true), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
+  const [modelSettings, setModelSettings] = useState(INITIAL), [imageSettings, setImageSettings] = useState(IMAGE_INITIAL), [mode, setMode] = useState("model"), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [imagePresetId, setImagePresetId] = useState(null), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: false, hatching: true, imageAdjustments: false, colors: true }), [showHint, setShowHint] = useState(true), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
   const runtime = useRef(null), input = useRef(null), panelDrag = useRef(null), hintTimer = useRef(null);
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 2200); };
   const settings = mode === "image" ? imageSettings : modelSettings;
@@ -723,9 +737,10 @@ export function App() {
     const isImage = /^image\//i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
     if (!isImage && !/\.(glb|gltf|obj|stl)$/i.test(file.name)) { notify("Use a 3D model or PNG, JPG, WEBP image"); return; }
     setLoadState({ status: "loading", message: "" });
-    setPreset(null); setMode(isImage ? "image" : "model"); setModel({ file, name: file.name, size: file.size, kind: isImage ? "image" : "model" }); notify(isImage ? "Reading image locally" : "Reading model locally");
+    setPreset(null); setImagePresetId(null); setMode(isImage ? "image" : "model"); setModel({ file, name: file.name, size: file.size, kind: isImage ? "image" : "model" }); notify(isImage ? "Reading image locally" : "Reading model locally");
   };
-  const choosePreset = (id) => { setMode("model"); setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
+  const choosePreset = (id) => { setMode("model"); setModel(null); setImagePresetId(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
+  const chooseImagePreset = (id) => { const item = IMAGE_PRESETS.find((entry) => entry.id === id); if (!item) return; setMode("image"); setPreset(null); setImagePresetId(id); setModel({ url: item.src, name: item.label, size: 0, kind: "image", sourceUrl: item.sourceUrl }); setLoadState({ status: "loading", message: "" }); notify(item.label + " preset loaded"); };
   const switchMode = (nextMode) => { if (nextMode !== mode) setMode(nextMode); };
   const download = async () => {
     try {
@@ -743,7 +758,7 @@ export function App() {
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand mode-switch-bar" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><div className="segmented mode-switch-control"><button className={mode === "model" ? "selected" : ""} onClick={() => switchMode("model")}>3D model</button><button className={mode === "image" ? "selected" : ""} onClick={() => switchMode("image")}>Image</button></div></div><div className="panel-divider"/>
-      <PanelSection name="model" label={mode === "image" ? "Image" : "Model"} open={openSections.model} onToggle={toggleSection}><button className="upload-card" onClick={() => input.current?.click()}><FileUp size={19}/><span><b>{activeSource?.name || (mode === "image" ? "Choose an image file" : "Choose a 3D model file")}</b><small>{loadState.status === "loading" ? "Loading locally…" : activeSource ? (activeSource.size / 1024 / 1024).toFixed(activeSource.size > 1048576 ? 1 : 2) + " MB" : (mode === "image" ? "PNG · JPG · WEBP" : "GLB · glTF · OBJ · STL")}</small></span><ChevronDown size={15}/></button><input ref={input} type="file" accept={mode === "image" ? ".png,.jpg,.jpeg,.webp" : ".glb,.gltf,.obj,.stl"} hidden onChange={selectFile}/>{loadState.status === "error" && <p className="load-error" role="alert">{loadState.message}</p>}{mode === "model" && <><div className="preset-label">Presets</div><div className="preset-grid">{PRESETS.map((item) => <button key={item.id} className={"preset-card" + (preset === item.id && !model ? " selected" : "")} aria-pressed={preset === item.id && !model} title={item.label} onClick={() => choosePreset(item.id)}><PresetThumbnail kind={item.id}/><span>{item.label}</span></button>)}</div></>}</PanelSection>
+      <PanelSection name="model" label={mode === "image" ? "Image" : "Model"} open={openSections.model} onToggle={toggleSection}><button className="upload-card" onClick={() => input.current?.click()}><FileUp size={19}/><span><b>{activeSource?.name || (mode === "image" ? "Choose an image file" : "Choose a 3D model file")}</b><small>{loadState.status === "loading" ? "Loading locally…" : activeSource ? (activeSource.size ? (activeSource.size / 1024 / 1024).toFixed(activeSource.size > 1048576 ? 1 : 2) + " MB" : "Preset image") : (mode === "image" ? "PNG · JPG · WEBP" : "GLB · glTF · OBJ · STL")}</small></span><ChevronDown size={15}/></button><input ref={input} type="file" accept={mode === "image" ? ".png,.jpg,.jpeg,.webp" : ".glb,.gltf,.obj,.stl"} hidden onChange={selectFile}/>{loadState.status === "error" && <p className="load-error" role="alert">{loadState.message}</p>}{mode === "model" ? <><div className="preset-label">Presets</div><div className="preset-grid">{PRESETS.map((item) => <button key={item.id} className={"preset-card" + (preset === item.id && !model ? " selected" : "")} aria-pressed={preset === item.id && !model} title={item.label} onClick={() => choosePreset(item.id)}><PresetThumbnail kind={item.id}/><span>{item.label}</span></button>)}</div></> : <><div className="preset-label">Presets</div><div className="preset-grid image-preset-grid">{IMAGE_PRESETS.map((item) => <button key={item.id} className={"preset-card image-preset-card" + (imagePresetId === item.id ? " selected" : "")} aria-pressed={imagePresetId === item.id} title={item.credit} onClick={() => chooseImagePreset(item.id)}><ImagePresetThumbnail src={item.src} label={item.label}/><span>{item.label}</span></button>)}</div></>}</PanelSection>
       {mode === "model" && <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><button className={"toggle-row camera-auto-rotate " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>}
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls">{mode === "image" ? <ImageHatchingControls settings={settings} update={update}/> : <ModelHatchingControls settings={settings} update={update}/>}</PanelSection>
       {mode === "image" && <PanelSection name="imageAdjustments" label="Image adjustments" open={openSections.imageAdjustments} onToggle={toggleSection} className="image-adjustments"><ImageAdjustmentControls settings={settings} update={update}/></PanelSection>}
