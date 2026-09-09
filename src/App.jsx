@@ -448,7 +448,7 @@ function applyViewportAppearance(runtime, paper, ink, settings) {
     uniforms.uLight.value.set(Math.cos(radians), .8, Math.sin(radians)).normalize();
   });
 }
-function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState, onCanvasInteract }) {
+function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState, onCanvasInteract }) {
   const host = useRef(null), live = useRef(null);
   useEffect(() => {
     const element = host.current, scene = new THREE.Scene(), orthographic = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 100), perspective = new THREE.PerspectiveCamera(36, 1, .1, 100), camera = orthographic;
@@ -555,6 +555,86 @@ function Viewport({ source, preset, paper, ink, settings, cameraMode, autoRotate
   }, [source, preset]);
   return <div className="viewport" ref={host} onPointerDown={onCanvasInteract}><div className="viewport-fade"/></div>;
 }
+function ImageViewport({ source, paper, ink, settings, onRuntime, onLoadState, onCanvasInteract }) {
+  const host = useRef(null), canvasRef = useRef(null), imageRef = useRef(null), drawRef = useRef(null);
+  const settingsRef = useRef(settings), paperRef = useRef(paper), inkRef = useRef(ink), onRuntimeRef = useRef(onRuntime), onLoadStateRef = useRef(onLoadState);
+  onRuntimeRef.current = onRuntime; onLoadStateRef.current = onLoadState;
+  useEffect(() => {
+    settingsRef.current = settings; paperRef.current = paper; inkRef.current = ink;
+    drawRef.current?.();
+  }, [settings, paper, ink]);
+  useEffect(() => {
+    const element = host.current, canvas = canvasRef.current;
+    if (!element || !canvas || !source?.file) return undefined;
+    const image = new Image(), url = URL.createObjectURL(source.file);
+    let cancelled = false;
+    const draw = () => {
+      const current = imageRef.current, currentSettings = settingsRef.current;
+      if (!current || !current.naturalWidth || !canvas.width || !canvas.height) return;
+      const dpr = Math.max(1, canvas.width / Math.max(element.clientWidth, 1)), width = element.clientWidth, height = element.clientHeight;
+      const context = canvas.getContext("2d"); if (!context) return;
+      context.setTransform(dpr, 0, 0, dpr, 0, 0); context.clearRect(0, 0, width, height); context.fillStyle = paperRef.current; context.fillRect(0, 0, width, height);
+      const scale = Math.min(width * .9 / current.naturalWidth, height * .9 / current.naturalHeight), drawWidth = current.naturalWidth * scale, drawHeight = current.naturalHeight * scale, offsetX = (width - drawWidth) / 2, offsetY = (height - drawHeight) / 2;
+      const sampleWidth = Math.max(2, Math.min(820, Math.round(drawWidth))), sampleHeight = Math.max(2, Math.min(820, Math.round(drawHeight))), sample = document.createElement("canvas"); sample.width = sampleWidth; sample.height = sampleHeight;
+      const sampleContext = sample.getContext("2d", { willReadFrequently: true }); if (!sampleContext) return; sampleContext.drawImage(current, 0, 0, sampleWidth, sampleHeight);
+      const pixels = sampleContext.getImageData(0, 0, sampleWidth, sampleHeight).data, luminance = (x, y) => { const px = Math.max(0, Math.min(sampleWidth - 1, Math.round(x))), py = Math.max(0, Math.min(sampleHeight - 1, Math.round(y))), i = (py * sampleWidth + px) * 4; return (.2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2]) / 255; }, darknessAt = (x, y) => 1 - luminance(x * sampleWidth / drawWidth, y * sampleHeight / drawHeight);
+      const angle = currentSettings.angle * Math.PI / 180, centerX = width / 2, centerY = height / 2, diagonal = Math.hypot(width, height), spacing = Math.max(4, currentSettings.spacing || 8), contrast = (currentSettings.contrast || 80) / 100, taper = Math.max(currentSettings.taper || 1.8, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26;
+      const smooth = (value) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }, hash = (value) => { const n = Math.sin(value * 12.9898) * 43758.5453; return n - Math.floor(n); };
+      const drawRun = (points, tones, threshold, familyScale, dotted, seed) => {
+        if (points.length < 2) return;
+        const fadeExtent = .06 + ((currentSettings.dottedFade ?? 58) / 100) * .28, capExtent = Math.max(2, points.length * .24);
+        context.lineCap = "round"; context.strokeStyle = inkRef.current;
+        for (let i = 0; i < points.length - 1; i += 1) {
+          const from = points[i], to = points[i + 1], tone = Math.max(0, Math.min(1, (tones[i] + tones[i + 1]) / 2)), darkness = Math.pow(Math.max(0, Math.min(1, (tone - threshold) / Math.max(1 - threshold, .001))), taper), cap = .18 + .82 * smooth(Math.min(1, Math.min(i + 1, points.length - i - 1) / capExtent));
+          let alpha = 1, draw = true;
+          const edgeProgress = Math.min((i + 1) / Math.max(points.length * fadeExtent, 1), (points.length - i - 1) / Math.max(points.length * fadeExtent, 1));
+          if (dotted && currentSettings.dottedEnds && edgeProgress < 1) { draw = hash(seed + i * 3.17) > .42; alpha = .1 + .9 * smooth(edgeProgress); }
+          if (!draw) continue;
+          context.globalAlpha = alpha; context.lineWidth = Math.max(.2, (currentSettings.weight || 1.8) * familyScale * (.3 + darkness * 1.5) * cap);
+          context.beginPath(); context.moveTo(from.x, from.y); context.lineTo(to.x, to.y); context.stroke();
+        }
+        context.globalAlpha = 1;
+      };
+      const renderFamily = (familyAngle, threshold, familyScale, dotted, lineStep, seedOffset) => {
+        const normalX = -Math.sin(familyAngle), normalY = Math.cos(familyAngle), tangentX = Math.cos(familyAngle), tangentY = Math.sin(familyAngle), sampleStep = Math.max(2, spacing * .42);
+        for (let intercept = -diagonal; intercept <= diagonal; intercept += lineStep) {
+          const points = [], tones = []; let runPoints = [], runTones = [];
+          for (let distance = -diagonal; distance <= diagonal; distance += sampleStep) {
+            const x = centerX + normalX * intercept + tangentX * distance, y = centerY + normalY * intercept + tangentY * distance, inside = x >= offsetX && x <= offsetX + drawWidth && y >= offsetY && y <= offsetY + drawHeight, tone = inside ? darknessAt(x - offsetX, y - offsetY) : 0, on = inside && tone > threshold;
+            if (on) { runPoints.push({ x, y }); runTones.push(tone); }
+            if ((!on || distance + sampleStep > diagonal) && runPoints.length > 1) { drawRun(runPoints, runTones, threshold, familyScale, dotted, seedOffset + intercept * 1.7 + distance); runPoints = []; runTones = []; }
+          }
+        }
+      };
+      renderFamily(angle, primaryThreshold, 1, true, spacing, 11); renderFamily(angle + Math.PI / 2, secondaryThreshold, currentSettings.crossWeight ?? 1.12, false, spacing * 1.6, 29);
+      // A lightweight luminance-gradient pass supplies the 2D equivalent of model outlines.
+      if ((currentSettings.outline || 0) > 0) {
+        context.globalAlpha = .78; context.lineWidth = Math.max(.35, currentSettings.outline); context.strokeStyle = inkRef.current;
+        for (let y = 1; y < sampleHeight - 1; y += 3) for (let x = 1; x < sampleWidth - 1; x += 3) {
+          const gx = luminance(x + 1, y) - luminance(x - 1, y), gy = luminance(x, y + 1) - luminance(x, y - 1), strength = Math.abs(gx) + Math.abs(gy);
+          if (strength < .22) continue;
+          const px = offsetX + x * drawWidth / sampleWidth, py = offsetY + y * drawHeight / sampleHeight, length = Math.min(2.5, 1 + strength * 5), nx = gx / Math.max(strength, .001), ny = gy / Math.max(strength, .001);
+          context.globalAlpha = Math.min(.9, strength * 2.2); context.beginPath(); context.moveTo(px - ny * length, py + nx * length); context.lineTo(px + ny * length, py - nx * length); context.stroke();
+        }
+        context.globalAlpha = 1;
+      }
+    };
+    drawRef.current = draw;
+    image.onload = () => { if (cancelled) return; imageRef.current = image; onLoadStateRef.current({ status: "ready", message: "" }); draw(); onRuntimeRef.current({ renderer: { domElement: canvas }, imageMode: true }); };
+    image.onerror = () => { if (!cancelled) onLoadStateRef.current({ status: "error", message: "Couldn’t read this image." }); };
+    onLoadStateRef.current({ status: "loading", message: "" }); image.src = url;
+    return () => { cancelled = true; imageRef.current = null; drawRef.current = null; URL.revokeObjectURL(url); };
+  }, [source]);
+  useEffect(() => {
+    const element = host.current, canvas = canvasRef.current; if (!element || !canvas) return undefined;
+    const resize = () => { const dpr = Math.min(window.devicePixelRatio || 1, 2), rect = element.getBoundingClientRect(); canvas.width = Math.max(1, Math.round(rect.width * dpr)); canvas.height = Math.max(1, Math.round(rect.height * dpr)); canvas.style.width = rect.width + "px"; canvas.style.height = rect.height + "px"; drawRef.current?.(); };
+    const observer = new ResizeObserver(resize); observer.observe(element); resize(); return () => observer.disconnect();
+  }, []);
+  return <div className="viewport image-viewport" ref={host} onPointerDown={onCanvasInteract}><canvas ref={canvasRef}/><div className="viewport-fade"/></div>;
+}
+function Viewport(props) {
+  return props.source?.kind === "image" ? <ImageViewport {...props}/> : <ModelViewport {...props}/>;
+}
 function PresetThumbnail({ kind }) {
   const paths = {
     bust: "M22 45C24 38 29 35 36 33C35 30 34 26 35 21C36 14 40 11 48 11C56 11 61 16 61 23C61 27 60 30 58 33C66 35 72 39 75 45Z",
@@ -611,9 +691,10 @@ export function App() {
   const panelStyle = isFullscreen && panelPosition ? { left: panelPosition.left, top: panelPosition.top, right: "auto" } : undefined;
   const selectFile = (event) => {
     const file = event.target.files?.[0]; if (!file) return;
-    if (!/\.(glb|gltf|obj|stl)$/i.test(file.name)) { notify("Use a GLB, glTF, OBJ, or STL file"); return; }
+    const isImage = /^image\//i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+    if (!isImage && !/\.(glb|gltf|obj|stl)$/i.test(file.name)) { notify("Use a 3D model or PNG, JPG, WEBP image"); return; }
     setLoadState({ status: "loading", message: "" });
-    setPreset(null); setModel({ file, name: file.name, size: file.size }); notify("Reading model locally");
+    setPreset(null); setModel({ file, name: file.name, size: file.size, kind: isImage ? "image" : "model" }); notify(isImage ? "Reading image locally" : "Reading model locally");
   };
   const choosePreset = (id) => { setModel(null); setPreset(id); notify(PRESETS.find((item) => item.id === id)?.label + " preset loaded"); };
   const download = async () => {
@@ -627,17 +708,17 @@ export function App() {
   return <main className={"app-shell" + (showPanel ? "" : " panel-hidden") + (isFullscreen ? " is-fullscreen" : "")} id="top">
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> PNG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
-      <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model, find the view, and export a transparent PNG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState} onCanvasInteract={revealHint}/><div className={"interaction-hint " + (showHint ? "visible" : "")} style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> drag to orbit · scroll to zoom</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model or image and export a transparent PNG built from outlines and shade-driven hatch strokes.</p></div>
+      <div className="model-stage"><Viewport source={model} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState} onCanvasInteract={revealHint}/><div className={"interaction-hint " + (showHint ? "visible" : "")} style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> {model?.kind === "image" ? "image hatching preview" : "drag to orbit · scroll to zoom"}</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><span>HatchKit</span><Sparkles size={15}/></div><div className="panel-divider"/>
-      <PanelSection name="model" label="Model" open={openSections.model} onToggle={toggleSection}><button className="upload-card" onClick={() => input.current?.click()}><FileUp size={19}/><span><b>{model?.name || "Choose a 3D file"}</b><small>{loadState.status === "loading" ? "Loading locally…" : model ? (model.size / 1024 / 1024).toFixed(model.size > 1048576 ? 1 : 2) + " MB" : "GLB · glTF · OBJ · STL"}</small></span><ChevronDown size={15}/></button><input ref={input} type="file" accept=".glb,.gltf,.obj,.stl" hidden onChange={selectFile}/>{loadState.status === "error" && <p className="load-error" role="alert">{loadState.message}</p>}<div className="preset-label">Presets</div><div className="preset-grid">{PRESETS.map((item) => <button key={item.id} className={"preset-card" + (preset === item.id && !model ? " selected" : "")} aria-pressed={preset === item.id && !model} title={item.label} onClick={() => choosePreset(item.id)}><PresetThumbnail kind={item.id}/><span>{item.label}</span></button>)}</div></PanelSection>
+      <PanelSection name="model" label="Model" open={openSections.model} onToggle={toggleSection}><button className="upload-card" onClick={() => input.current?.click()}><FileUp size={19}/><span><b>{model?.name || "Choose a 3D or image file"}</b><small>{loadState.status === "loading" ? "Loading locally…" : model ? (model.size / 1024 / 1024).toFixed(model.size > 1048576 ? 1 : 2) + " MB" : "GLB · glTF · OBJ · STL · PNG · JPG"}</small></span><ChevronDown size={15}/></button><input ref={input} type="file" accept=".glb,.gltf,.obj,.stl,.png,.jpg,.jpeg,.webp" hidden onChange={selectFile}/>{loadState.status === "error" && <p className="load-error" role="alert">{loadState.message}</p>}<div className="preset-label">Presets</div><div className="preset-grid">{PRESETS.map((item) => <button key={item.id} className={"preset-card" + (preset === item.id && !model ? " selected" : "")} aria-pressed={preset === item.id && !model} title={item.label} onClick={() => choosePreset(item.id)}><PresetThumbnail kind={item.id}/><span>{item.label}</span></button>)}</div></PanelSection>
       <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><div className="camera-note"><Maximize2 size={14}/> {cameraMode === "perspective" ? "perspective view" : "axonometric view"} · orbit directly in the 3D view</div><button className={"toggle-row " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls"><div className="style-row"><span>Line type</span><div className="segmented hatch-style"><button className={settings.lineStyle === "straight" ? "selected" : ""} onClick={() => update("lineStyle", "straight")}>Straight</button><button className={settings.lineStyle === "wave" ? "selected" : ""} onClick={() => update("lineStyle", "wave")}>Wavy</button></div></div>{settings.lineStyle === "wave" && <Range label="Wave curvature" value={settings.wave} min={8} max={24} step={.5} suffix=" px" onChange={(v) => update("wave", v)}/>}<Range label="Line spacing" value={settings.spacing} min={4} max={18} suffix=" px" onChange={(v) => update("spacing", v)}/><Range label="Stroke weight" value={settings.weight} min={.5} max={4} step={.05} suffix=" px" onChange={(v) => update("weight", v)}/><Range label="Stroke taper" value={settings.taper ?? 2.2} min={.5} max={5} step={.1} suffix=" ×" onChange={(v) => update("taper", v)}/><Range label="Cross-hatch weight" value={settings.crossWeight ?? 1.12} min={1} max={3} step={.01} suffix=" ×" onChange={(v) => update("crossWeight", v)}/><Range label="Raggedness" value={settings.raggedness ?? 0} min={0} max={100} suffix="%" onChange={(v) => update("raggedness", v)}/><Range label="Outline thickness" value={settings.outline} min={0} max={4} step={.1} suffix=" px" onChange={(v) => update("outline", v)}/><Range label="Contrast" value={settings.contrast} min={20} max={100} suffix="%" onChange={(v) => update("contrast", v)}/><Range label="Hatch angle" value={settings.angle} min={-45} max={45} suffix="°" onChange={(v) => update("angle", v)}/><Range label="Light direction" value={settings.light} min={-180} max={180} suffix="°" onChange={(v) => update("light", v)}/><button className={"toggle-row dotted-toggle " + (settings.dottedEnds ? "on" : "")} aria-pressed={settings.dottedEnds} onClick={() => update("dottedEnds", !settings.dottedEnds)}><span>Dotted line ends</span><span className="toggle-track"><span className="toggle-thumb"/></span></button>{settings.dottedEnds && <Range label="Dotted fade" value={settings.dottedFade ?? 58} min={0} max={100} suffix="%" onChange={(v) => update("dottedFade", v)}/>}</PanelSection>
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
       <div className="panel-footer"><button className="copy-button" onClick={resetSettings}><RotateCcw size={15}/> Reset</button><button className="export-button" onClick={download}><Download size={15}/> Export PNG</button></div>
     </aside>
-    <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D view · PNG export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
+    <footer className="page-footer"><span><Info size={14}/> Nothing leaves your device</span><span>3D / image view · PNG export</span></footer>{toast && <div className="toast"><Check size={15}/> {toast}</div>}
   </main>;
 }
