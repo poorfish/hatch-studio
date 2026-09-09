@@ -495,7 +495,7 @@ function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoR
   }, [paper, ink, settings]);
   useEffect(() => {
     if (!live.current) return;
-    if (!source?.file) {
+    if (!source?.file && !source?.url) {
       const current = live.current;
       let cancelled = false;
       const swapPreset = (next, shouldFit = false) => {
