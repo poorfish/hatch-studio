@@ -62,5 +62,5 @@
 .is-fullscreen .toast{display:none}
 .interaction-hint{opacity:0;visibility:hidden;transition:opacity .24s ease,visibility .24s ease}.interaction-hint.visible{opacity:1;visibility:visible}
 .mode-switch-bar .mode-switch-control{flex:1;min-width:0;margin-right:0}.mode-switch-bar .mode-switch-control button{font-size:9px;padding:5px 3px}.image-adjustments{border-top:1px solid #343238;padding-top:12px}.image-adjustments .section-heading{margin-bottom:9px}
-.camera-auto-rotate{border-top:0;padding-top:0}
+.camera-auto-rotate,.camera-occlusion{border-top:0;padding-top:0}.camera-wireframe + .range-row{margin-top:8px}
 .image-preset-art{width:100%;height:48px;display:block;object-fit:cover;object-position:center;border-radius:4px;filter:grayscale(.12) contrast(1.08)}.image-preset-card span{font-size:7px}
