@@ -22,7 +22,7 @@ import mountainImage from "./assets/image-presets/mountain.jpg";
 
 const PAPER = "#f7f4ec";
 const INITIAL = { spacing: 8, weight: 1.8, taper: 1.8, crossWeight: 1.12, outline: .5, raggedness: 0, contrast: 80, angle: -12, light: 35, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 58 };
-const IMAGE_INITIAL = { spacing: 4, weight: 1.35, taper: 1.6, crossWeight: 1.25, contrast: 68, angle: -12, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 54, exposure: 0, brightness: 0, imageContrast: 0, saturation: 0, hue: 0, temperature: 0, tint: 0 };
+const IMAGE_INITIAL = { spacing: 4, weight: 1.35, taper: 1.6, crossWeight: 1.25, contrast: 5, angle: 0, lineStyle: "straight", wave: 8, dottedEnds: false, dottedFade: 54, exposure: 0, brightness: 0, imageContrast: 0, saturation: 0, hue: 0, temperature: 0, tint: 0 };
 const PRESETS = [
   { id: "bust", label: "Greek bust", caption: "Greek bust" },
   { id: "knot", label: "KNOT", caption: "Torus knot" },
