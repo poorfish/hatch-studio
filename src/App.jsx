@@ -241,6 +241,33 @@ function prepareImportedModel(object, ink) {
   });
   return meshes.length ? object : null;
 }
+function applyWireframeOverlay(runtime, enabled, ink) {
+  const root = runtime?.model;
+  if (!root) return;
+  root.traverse((item) => {
+    if (!item.isMesh || item.userData.silhouette) return;
+    const overlays = item.children.filter((child) => child.userData.wireframeOverlay);
+    if (!enabled) {
+      overlays.forEach((overlay) => {
+        item.remove(overlay);
+        overlay.geometry?.dispose();
+        overlay.material?.dispose();
+      });
+      return;
+    }
+    if (overlays.length) {
+      overlays.forEach((overlay) => overlay.material?.color?.set(ink));
+      return;
+    }
+    const lines = new THREE.LineSegments(
+      new THREE.WireframeGeometry(item.geometry),
+      new THREE.LineBasicMaterial({ color: ink, transparent: true, opacity: .58, depthTest: true })
+    );
+    lines.userData.wireframeOverlay = true;
+    lines.renderOrder = 4;
+    item.add(lines);
+  });
+}
 function loadBundledModel(url) {
   return fetch(url).then((response) => {
     if (!response.ok) throw new Error("Bundled model could not be read");
@@ -459,7 +486,7 @@ function applyViewportAppearance(runtime, paper, ink, settings) {
     uniforms.uLight.value.set(Math.cos(radians), .8, Math.sin(radians)).normalize();
   });
 }
-function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, onRuntime, onLoadState, onCanvasInteract }) {
+function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoRotate, wireframe, onRuntime, onLoadState, onCanvasInteract }) {
   const host = useRef(null), live = useRef(null);
   useEffect(() => {
     const element = host.current, scene = new THREE.Scene(), orthographic = new THREE.OrthographicCamera(-5, 5, 5, -5, .1, 100), perspective = new THREE.PerspectiveCamera(36, 1, .1, 100), camera = orthographic;
@@ -495,6 +522,10 @@ function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoR
   }, [paper, ink, settings]);
   useEffect(() => {
     if (!live.current) return;
+    applyWireframeOverlay(live.current, wireframe, ink);
+  }, [wireframe, ink]);
+  useEffect(() => {
+    if (!live.current) return;
     if (!source?.file) {
       const current = live.current;
       let cancelled = false;
@@ -503,6 +534,7 @@ function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoR
         if (shouldFit) fit(next);
         current.scene.remove(current.model); current.model = next; current.scene.add(next);
         current.outlinePass.selectedObjects = meshTargets(next);
+        applyWireframeOverlay(current, wireframe, ink);
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
         onRuntime(current);
@@ -547,6 +579,7 @@ function ModelViewport({ source, preset, paper, ink, settings, cameraMode, autoR
         current.model = prepared;
         current.scene.add(prepared);
         current.outlinePass.selectedObjects = meshTargets(prepared);
+        applyWireframeOverlay(current, wireframe, ink);
         applyViewportAppearance(current, paper, ink, settings);
         frameView(current, current.renderer.domElement.clientWidth, current.renderer.domElement.clientHeight);
         current.controls.update();
@@ -694,7 +727,7 @@ function ImageAdjustmentControls({ settings, update }) {
   return <><Range label="Exposure" value={settings.exposure ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("exposure", v)}/><Range label="Brightness" value={settings.brightness ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("brightness", v)}/><Range label="Image contrast" value={settings.imageContrast ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("imageContrast", v)}/><Range label="Saturation" value={settings.saturation ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("saturation", v)}/><Range label="Hue" value={settings.hue ?? 0} min={-180} max={180} suffix="°" onChange={(v) => update("hue", v)}/><Range label="Temperature" value={settings.temperature ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("temperature", v)}/><Range label="Tint" value={settings.tint ?? 0} min={-100} max={100} suffix="" onChange={(v) => update("tint", v)}/></>;
 }
 export function App() {
-  const [modelSettings, setModelSettings] = useState(INITIAL), [imageSettings, setImageSettings] = useState(IMAGE_INITIAL), [mode, setMode] = useState("model"), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [imagePresetId, setImagePresetId] = useState(null), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: false, hatching: true, imageAdjustments: false, colors: true }), [showHint, setShowHint] = useState(true), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
+  const [modelSettings, setModelSettings] = useState(INITIAL), [imageSettings, setImageSettings] = useState(IMAGE_INITIAL), [mode, setMode] = useState("model"), [model, setModel] = useState(null), [preset, setPreset] = useState("bust"), [imagePresetId, setImagePresetId] = useState(null), [paper, setPaper] = useState(PAPER), [ink, setInk] = useState("#10100f"), [cameraMode, setCameraMode] = useState("orthographic"), [autoRotate, setAutoRotate] = useState(true), [wireframe, setWireframe] = useState(false), [showPanel, setShowPanel] = useState(true), [isFullscreen, setIsFullscreen] = useState(false), [panelPosition, setPanelPosition] = useState(null), [isDraggingPanel, setIsDraggingPanel] = useState(false), [openSections, setOpenSections] = useState({ model: true, camera: false, hatching: true, imageAdjustments: false, colors: true }), [showHint, setShowHint] = useState(true), [toast, setToast] = useState(""), [loadState, setLoadState] = useState({ status: "idle", message: "" });
   const runtime = useRef(null), input = useRef(null), panelDrag = useRef(null), hintTimer = useRef(null);
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(""), 2200); };
   const settings = mode === "image" ? imageSettings : modelSettings;
@@ -761,12 +794,12 @@ export function App() {
     <header className="topbar"><a className="wordmark" href="#top">HATCH<span>STUDIO</span></a><div className="top-status"><span className="dot"/> local renderer <span className="divider"/> PNG / pen plotter</div><button className={"icon-button panel-toggle " + (showPanel ? "active" : "")} aria-label={showPanel ? "Hide settings" : "Show settings"} aria-pressed={showPanel} title={showPanel ? "Hide settings" : "Show settings"} onClick={() => setShowPanel((value) => !value)}><SlidersHorizontal size={16}/></button></header>
     <section className="workspace">
       <div className="hero-copy"><p className="eyebrow">3D → linework</p><h1>Turn a model into<br/><em>drawn terrain.</em></h1><p>Upload a model or image and export a transparent PNG built from outlines and shade-driven hatch strokes.</p></div>
-      <div className="model-stage"><Viewport mode={mode} source={mode === "image" ? (model?.kind === "image" ? model : null) : (model?.kind === "model" ? model : null)} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState} onCanvasInteract={revealHint}/><div className={"interaction-hint " + (showHint ? "visible" : "")} style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> {mode === "image" ? "image hatching preview" : "drag to orbit · scroll to zoom"}</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
+      <div className="model-stage"><Viewport mode={mode} source={mode === "image" ? (model?.kind === "image" ? model : null) : (model?.kind === "model" ? model : null)} preset={preset || "bust"} paper={paper} ink={ink} settings={settings} cameraMode={cameraMode} autoRotate={autoRotate} wireframe={wireframe} onRuntime={(value) => { runtime.current = value; }} onLoadState={setLoadState} onCanvasInteract={revealHint}/><div className={"interaction-hint " + (showHint ? "visible" : "")} style={{ "--hint-paper": paper }}><MousePointer2 size={14}/> {mode === "image" ? "image hatching preview" : "drag to orbit · scroll to zoom"}</div><button type="button" className="fullscreen-toggle" aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} aria-pressed={isFullscreen} title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"} onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 size={15}/> : <Maximize2 size={15}/>}</button></div>
     </section>
     <aside className={"control-panel" + (showPanel ? "" : " hidden") + (isDraggingPanel ? " panel-dragging" : "")} style={panelStyle}>
       <div className="panel-brand mode-switch-bar" onPointerDown={startPanelDrag} title={isFullscreen ? "Drag to move settings" : undefined}><div className="segmented mode-switch-control"><button className={mode === "model" ? "selected" : ""} onClick={() => switchMode("model")}>3D model</button><button className={mode === "image" ? "selected" : ""} onClick={() => switchMode("image")}>Image</button></div></div><div className="panel-divider"/>
       <PanelSection name="model" label={mode === "image" ? "Image" : "Model"} open={openSections.model} onToggle={toggleSection}><button className="upload-card" onClick={() => input.current?.click()}><FileUp size={19}/><span><b>{mode === "image" ? "Choose a image file" : activeSource?.name || "Choose a 3D model file"}</b><small>{loadState.status === "loading" ? "Loading locally…" : activeSource ? (activeSource.size ? (activeSource.size / 1024 / 1024).toFixed(activeSource.size > 1048576 ? 1 : 2) + " MB" : "Preset image") : (mode === "image" ? "PNG · JPG · WEBP" : "GLB · glTF · OBJ · STL")}</small></span><ChevronDown size={15}/></button><input ref={input} type="file" accept={mode === "image" ? ".png,.jpg,.jpeg,.webp" : ".glb,.gltf,.obj,.stl"} hidden onChange={selectFile}/>{loadState.status === "error" && <p className="load-error" role="alert">{loadState.message}</p>}{mode === "model" ? <><div className="preset-label">Presets</div><div className="preset-grid">{PRESETS.map((item) => <button key={item.id} className={"preset-card" + (preset === item.id && !model ? " selected" : "")} aria-pressed={preset === item.id && !model} title={item.label} onClick={() => choosePreset(item.id)}><PresetThumbnail kind={item.id}/><span>{item.label}</span></button>)}</div></> : <><div className="preset-label">Presets</div><div className="preset-grid image-preset-grid">{IMAGE_PRESETS.map((item) => <button key={item.id} className={"preset-card image-preset-card" + (imagePresetId === item.id ? " selected" : "")} aria-pressed={imagePresetId === item.id} title={item.credit} onClick={() => chooseImagePreset(item.id)}><ImagePresetThumbnail src={item.src} label={item.label}/><span>{item.label}</span></button>)}</div></>}</PanelSection>
-      {mode === "model" && <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><button className={"toggle-row camera-auto-rotate " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>}
+      {mode === "model" && <PanelSection name="camera" label="Camera" open={openSections.camera} onToggle={toggleSection}><div className="segmented"><button className={cameraMode === "perspective" ? "selected" : ""} onClick={() => setCameraMode("perspective")}>Perspective</button><button className={cameraMode === "orthographic" ? "selected" : ""} onClick={() => setCameraMode("orthographic")}>Orthographic</button></div><button className={"toggle-row camera-auto-rotate " + (autoRotate ? "on" : "")} aria-pressed={autoRotate} onClick={() => setAutoRotate((value) => !value)}><span>Auto rotate model</span><span className="toggle-track"><span className="toggle-thumb"/></span></button><button className={"toggle-row camera-wireframe " + (wireframe ? "on" : "")} aria-pressed={wireframe} onClick={() => setWireframe((value) => !value)}><span>Wireframe</span><span className="toggle-track"><span className="toggle-thumb"/></span></button></PanelSection>}
       <PanelSection name="hatching" label="Hatching" open={openSections.hatching} onToggle={toggleSection} className="hatch-controls">{mode === "image" ? <ImageHatchingControls settings={settings} update={update}/> : <ModelHatchingControls settings={settings} update={update}/>}</PanelSection>
       {mode === "image" && <PanelSection name="imageAdjustments" label="Image adjustments" open={openSections.imageAdjustments} onToggle={toggleSection} className="image-adjustments"><ImageAdjustmentControls settings={settings} update={update}/></PanelSection>}
       <PanelSection name="colors" label="Paper & ink" open={openSections.colors} onToggle={toggleSection} className="colors"><label className="color-row"><span>Ink</span><output>{ink}</output><input aria-label="Ink color" type="color" value={ink} onChange={(e) => setInk(e.target.value)}/></label><label className="color-row"><span>Paper</span><output>{paper}</output><input aria-label="Paper color" type="color" value={paper} onChange={(e) => setPaper(e.target.value)}/></label></PanelSection>
