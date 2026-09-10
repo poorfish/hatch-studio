@@ -265,14 +265,23 @@ function applyWireframeOverlay(runtime, enabled, ink, density = 100) {
       overlay.geometry?.dispose();
       overlay.material?.dispose();
     });
-    const source = new THREE.WireframeGeometry(item.geometry);
-    const positions = source.attributes.position.array;
-    const filtered = [];
-    for (let i = 0; i < positions.length; i += 6) {
-      const hash = Math.sin((i / 6 + 1) * 12.9898 + item.id * 78.233) * 43758.5453;
-      if (amount >= 99.99 || hash - Math.floor(hash) < amount / 100) filtered.push(...positions.slice(i, i + 6));
+    const position = item.geometry.attributes?.position, index = item.geometry.index;
+    if (!position) return;
+    const filtered = [], edges = new Set();
+    const point = (vertex) => [position.getX(vertex), position.getY(vertex), position.getZ(vertex)];
+    const addEdge = (a, b) => {
+      const key = a < b ? a + ":" + b : b + ":" + a;
+      if (edges.has(key)) return;
+      edges.add(key);
+      filtered.push(...point(a), ...point(b));
+    };
+    const faceCount = index ? Math.floor(index.count / 3) : Math.floor(position.count / 3);
+    for (let face = 0; face < faceCount; face += 1) {
+      const hash = Math.sin((face + 1) * 12.9898 + item.id * 78.233) * 43758.5453;
+      if (amount < 99.99 && hash - Math.floor(hash) >= amount / 100) continue;
+      const a = index ? index.getX(face * 3) : face * 3, b = index ? index.getX(face * 3 + 1) : face * 3 + 1, c = index ? index.getX(face * 3 + 2) : face * 3 + 2;
+      addEdge(a, b); addEdge(b, c); addEdge(c, a);
     }
-    source.dispose();
     if (!filtered.length) return;
     const lines = new THREE.LineSegments(
       new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute(filtered, 3)),
