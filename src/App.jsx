@@ -22,7 +22,7 @@ import mountainImage from "./assets/image-presets/mountain.jpg";
 
 const PAPER = "#f7f4ec";
 const INITIAL = { spacing: 8, weight: 1.8, taper: 1.8, crossWeight: 1.12, outline: .5, raggedness: 0, contrast: 80, angle: -12, light: 35, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 58 };
-const IMAGE_INITIAL = { spacing: 8, weight: 1.35, taper: 1.6, crossWeight: 1.25, contrast: 68, angle: -12, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 54, exposure: 0, brightness: 0, imageContrast: 0, saturation: 0, hue: 0, temperature: 0, tint: 0 };
+const IMAGE_INITIAL = { spacing: 4, weight: 1.35, taper: 1.6, crossWeight: 1.25, contrast: 68, angle: -12, lineStyle: "straight", wave: 8, dottedEnds: true, dottedFade: 54, exposure: 0, brightness: 0, imageContrast: 0, saturation: 0, hue: 0, temperature: 0, tint: 0 };
 const PRESETS = [
   { id: "bust", label: "Greek bust", caption: "Greek bust" },
   { id: "knot", label: "KNOT", caption: "Torus knot" },
@@ -607,7 +607,7 @@ function ImageViewport({ source, paper, ink, settings, onRuntime, onLoadState, o
         pixels[i] = Math.max(0, Math.min(255, (rr + temperature / 100 * .08) * 255)); pixels[i + 1] = Math.max(0, Math.min(255, (gg + tint / 100 * .05) * 255)); pixels[i + 2] = Math.max(0, Math.min(255, (bb - temperature / 100 * .08) * 255));
       }
       const luminance = (x, y) => { const px = Math.max(0, Math.min(sampleWidth - 1, Math.round(x))), py = Math.max(0, Math.min(sampleHeight - 1, Math.round(y))), i = (py * sampleWidth + px) * 4; return (.2126 * pixels[i] + .7152 * pixels[i + 1] + .0722 * pixels[i + 2]) / 255; }, darknessAt = (x, y) => 1 - luminance(x * sampleWidth / drawWidth, y * sampleHeight / drawHeight);
-      const angle = currentSettings.angle * Math.PI / 180, centerX = width / 2, centerY = height / 2, diagonal = Math.hypot(width, height), spacing = Math.max(1, currentSettings.spacing || 8), contrast = (currentSettings.contrast || 80) / 100, taper = Math.max(currentSettings.taper || 1.8, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26;
+      const angle = currentSettings.angle * Math.PI / 180, centerX = width / 2, centerY = height / 2, diagonal = Math.hypot(width, height), spacing = Math.max(1, currentSettings.spacing || 4), contrast = (currentSettings.contrast || 80) / 100, taper = Math.max(currentSettings.taper || 1.8, .1), primaryThreshold = .16 + contrast * .32, secondaryThreshold = .46 + contrast * .26;
       const smooth = (value) => { const t = Math.max(0, Math.min(1, value)); return t * t * (3 - 2 * t); }, hash = (value) => { const n = Math.sin(value * 12.9898) * 43758.5453; return n - Math.floor(n); };
       const drawRun = (points, tones, threshold, familyScale, dotted, seed) => {
         if (points.length < 2) return;
